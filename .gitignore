@@ -1,0 +1,35 @@
+# --- Python byte-code / caches ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# --- Secrets ---
+.env
+*.env
+!.env.example
+
+# --- Local database + WAL sidecars ---
+pronunciation_ai.db
+pronunciation_ai.db-wal
+pronunciation_ai.db-shm
+pronunciation_ai.db.bak
+
+# --- Model weights (large; distributed separately) ---
+model/my_wav2vec2_phoneme_model/model.safetensors
+model/my_wav2vec2_phoneme_model/pytorch_model.bin
+
+# --- Voice recordings & temporary processed audio (never commit user voice) ---
+uploads/*
+!uploads/.gitkeep
+*.webm
+*.ogg
+*.m4a
+*.opus
+*_converted.wav
+*_cleanvoice.wav
+*_reduced.wav
+# Committed test fixtures are the ONLY audio that is tracked.
+!tests/fixtures/
+!tests/fixtures/**

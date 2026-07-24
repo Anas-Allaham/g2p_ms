@@ -1,0 +1,34 @@
+# Full local/development dependencies for the pronunciation AI microservice.
+
+# --- Web layer ---
+fastapi
+uvicorn[standard]
+python-multipart          # multipart/form-data (audio uploads)
+python-dotenv
+
+# --- Acoustic model + audio ---
+transformers
+torch
+librosa
+soundfile
+imageio-ffmpeg
+numpy
+noisereduce
+scipy
+
+# --- Scoring (PanPhon is REQUIRED for trusted scoring; without it the service
+#     runs in the untrusted fallback and never updates mastery) ---
+panphon
+
+# --- Optional preprocessing / generation ---
+cleanvoice-sdk>=2.0.5,<3   # optional server-side enhancement (needs a key)
+openai                     # optional LLM exercise-generation fallback
+
+# --- Optional G2P upgrades (dictionary fallback works without these) ---
+# spacy                    # better heteronym POS tagging (also needs en_core_web_sm)
+# nemo_toolkit[tts]        # richer non-dictionary G2P coverage
+
+# --- Tests (the CI suite mocks the acoustic layer, so torch is not required
+#     to run the mocked tests) ---
+pytest
+httpx                      # FastAPI TestClient transport
