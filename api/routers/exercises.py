@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from ..config import API_VERSION
 from ..dependencies import require_idempotency_key, valid_subject_id
 from ..envelopes import build_meta, error_body, success
+from ..errors import ValidationError
 from ..schemas import ExerciseEnvelope, ExerciseGenerateRequest, NextExerciseEnvelope
 from ..security import require_service_auth
 
@@ -34,8 +35,15 @@ def generate_stateless(payload: ExerciseGenerateRequest, request: Request):
     from src.core.exercises import services
     from src.core.g2p.g2p_service import g2p_convert_with_metadata
     from src.core.g2p.tokenization import tokenize_reference_ipa
+    from ..arpabet import metrics_to_internal_ipa, to_public_arpabet
 
-    metrics = {str(k): float(v) for k, v in (payload.metrics or {}).items()}
+    try:
+        metrics = metrics_to_internal_ipa(payload.metrics)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(
+            "The metrics object contains an unsupported ARPAbet phoneme.",
+            details={"reason": str(exc)},
+        ) from exc
     result = services.generate_exercise(metrics, g2p_convert_with_metadata, tokenize_reference_ipa, set())
     if result.get("exercise") is None:
         return JSONResponse(
@@ -43,11 +51,11 @@ def generate_stateless(payload: ExerciseGenerateRequest, request: Request):
             content=error_body(
                 "exercise_bank_empty",
                 result.get("error", "No exercises available."),
-                details={"assessment": result.get("assessment")},
+                details=to_public_arpabet({"assessment": result.get("assessment")}),
                 request=request,
             ),
         )
-    return success(result, request)
+    return success(to_public_arpabet(result), request)
 
 
 def _select_next(user_id: int) -> Dict[str, Any]:
@@ -153,6 +161,7 @@ def next_for_subject(
     idempotency_key: str = Depends(require_idempotency_key),
 ):
     from src.core.persistence import db
+    from ..arpabet import to_public_arpabet
 
     scope = f"exercise_next:{subject_id}"
     replay = db.get_idempotent_response(scope, idempotency_key)
@@ -181,9 +190,10 @@ def next_for_subject(
                 ),
             )
         payload["subject_id"] = subject_id
-        db.save_idempotent_response(scope, idempotency_key, payload)
+        public_payload = to_public_arpabet(payload)
+        db.save_idempotent_response(scope, idempotency_key, public_payload)
         db.checkpoint()
-        return success(payload, request)
+        return success(public_payload, request)
     except Exception:
         db.release_idempotency_key(scope, idempotency_key)
         raise

@@ -45,6 +45,7 @@ def capabilities(request: Request):
     )
 
     from .. import acoustic
+    from ..arpabet import to_public_arpabet
 
     inventory_report = validate_g2p_inventory(db.get_all_bank_phonemes())
     panphon_report = validate_panphon_inventory()
@@ -70,6 +71,9 @@ def capabilities(request: Request):
         },
         "g2p": {
             "available": HETERONYMS_PATH.exists() and IPA_DICT_PATH.exists(),
+            "alphabet": "arpabet",
+            "internal_alphabet": "ipa",
+            "stress": "not_assessed",
             "mode": get_g2p_mode(),
             "heteronym_resolution_active": heteronym_resolution_active(),
             "heteronym_entries_checked": heteronym_report["checked"],
@@ -103,4 +107,4 @@ def capabilities(request: Request):
             ),
         },
     }
-    return success(data, request)
+    return success(to_public_arpabet(data), request)

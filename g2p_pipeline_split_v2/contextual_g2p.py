@@ -9,7 +9,8 @@ from pos_tagger import PosTagger, SpacyPosTagger
 class ContextAwareIpaG2p:
     """
     Pipeline:
-    raw text -> spaCy POS tagging -> external heteronym lexicon (IPA) -> NeMo IpaG2p fallback
+    raw text -> spaCy POS tagging -> external heteronym lexicon (IPA)
+    -> NeMo IpaG2p fallback.
     """
 
     def __init__(
@@ -32,11 +33,9 @@ class ContextAwareIpaG2p:
         self.tagger = tagger or SpacyPosTagger("en_core_web_sm")
         self.lexicon = ExternalHeteronymLexicon(heteronyms_json_path)
 
-    def _normalize_ipa_output(self, ipa_out) -> str:
-        """
-        Keeps only the first pronunciation from NeMo output
-        and returns it as one IPA string like: 'ɹɛd'
-        """
+    @staticmethod
+    def _normalize_ipa_output(ipa_out) -> str:
+        """Keep only the first pronunciation returned by NeMo."""
         if isinstance(ipa_out, str):
             ipa_out = [ipa_out]
         elif not isinstance(ipa_out, list):
@@ -46,8 +45,7 @@ class ContextAwareIpaG2p:
         for item in ipa_out:
             if item == ",":
                 break
-            cleaned.append(item)
-
+            cleaned.append(str(item))
         return "".join(cleaned)
 
     def __call__(self, text: str) -> List[str]:
@@ -56,11 +54,9 @@ class ContextAwareIpaG2p:
 
         for token, pos_tag in tagged:
             resolved = self.lexicon.resolve(token, pos_tag)
-
             if resolved is not None:
                 output.append("".join(resolved))
             else:
-                ipa_out = self.g2p(token)
-                output.append(self._normalize_ipa_output(ipa_out))
+                output.append(self._normalize_ipa_output(self.g2p(token)))
 
         return output

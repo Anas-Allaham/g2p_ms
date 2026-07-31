@@ -53,7 +53,7 @@ def test_real_model_transcribes_and_scores(tmp_path):
             )
             assert r.status_code == 200
             data = r.json()["data"]
-            assert data["predicted_ipa"]  # real transcription produced something
+            assert data["predicted_arpabet"]  # real transcription produced something
             assert "utterance_score" in data["metrics"]
     finally:
         db.set_database_for_testing(original)

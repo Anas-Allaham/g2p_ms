@@ -43,13 +43,13 @@ def _envelope(data_model):
 
 # ---- G2P -------------------------------------------------------------------
 class G2PRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=2000, description="English text to convert to IPA.")
+    text: str = Field(..., min_length=1, max_length=2000, description="English text to convert to ARPAbet.")
 
 
 class G2PData(BaseModel):
     model_config = ConfigDict(extra="allow")
     text: str
-    ipa: str
+    arpabet: str
     guide: List[Dict[str, Any]]
     g2p_mode: str
     heteronym_resolution_active: bool
@@ -80,8 +80,8 @@ class AnalysisData(BaseModel):
     scorable: bool
     quality_warning: bool
     text: str
-    reference_ipa: str
-    predicted_ipa: str
+    reference_arpabet: str
+    predicted_arpabet: str
     scoring_engine: str
     scoring_trusted: bool
     metrics: Dict[str, Any]
@@ -132,7 +132,7 @@ class AttemptsPageData(BaseModel):
 class ExerciseGenerateRequest(BaseModel):
     metrics: Dict[str, float] = Field(
         default_factory=dict,
-        description="Per-phoneme mastery scores in [0,1] keyed by IPA symbol.",
+        description="Per-phoneme mastery scores in [0,1] keyed by ARPAbet symbol.",
     )
 
 
@@ -149,7 +149,7 @@ class NextExerciseData(BaseModel):
     model_config = ConfigDict(extra="allow")
     sentence_id: int
     text: str
-    reference_ipa: str
+    reference_arpabet: str
     mode: str
     exercise_type: str
     target_phonemes: List[str] = Field(default_factory=list)

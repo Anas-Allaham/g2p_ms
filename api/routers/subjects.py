@@ -63,11 +63,12 @@ def delete_subject(request: Request, subject_id: str = Depends(valid_subject_id)
 def get_assessment(request: Request, subject_id: str = Depends(valid_subject_id)):
     from src.core.persistence import db
     from src.core.exercises import services
+    from ..arpabet import to_public_arpabet
 
     row = db.get_subject(subject_id)
     if row is None:
         return success({"assessment": None}, request)
-    return success({"assessment": services.assess_profile(row["id"])}, request)
+    return success(to_public_arpabet({"assessment": services.assess_profile(row["id"])}), request)
 
 
 @router.get("/{subject_id}/gaps", response_model=GapsEnvelope)
@@ -76,6 +77,7 @@ def get_gaps(request: Request, subject_id: str = Depends(valid_subject_id)):
     from src.core.scoring import mastery
     from src.core.exercises import services
     from src.core.g2p.tokenization import PHONEME_GUIDE
+    from ..arpabet import to_public_arpabet
 
     row = db.get_subject(subject_id)
     if row is None:
@@ -97,7 +99,7 @@ def get_gaps(request: Request, subject_id: str = Depends(valid_subject_id)):
             "last_practiced_at": stat.last_practiced_at.isoformat() if stat.last_practiced_at else None,
             "example": guide.get("example", ""),
         })
-    return success({"phonemes": phonemes}, request)
+    return success(to_public_arpabet({"phonemes": phonemes}), request)
 
 
 @router.get("/{subject_id}/attempts", response_model=AttemptsPageEnvelope)

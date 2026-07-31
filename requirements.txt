@@ -24,9 +24,9 @@ panphon
 cleanvoice-sdk>=2.0.5,<3   # optional server-side enhancement (needs a key)
 openai                     # optional LLM exercise-generation fallback
 
-# --- Optional G2P upgrades (dictionary fallback works without these) ---
-# spacy                    # better heteronym POS tagging (also needs en_core_web_sm)
-# nemo_toolkit[tts]        # richer non-dictionary G2P coverage
+# --- Preferred reference G2P path ---
+spacy                      # POS-aware heteronym resolution; also install en_core_web_sm
+nemo_toolkit[tts]          # NeMo IpaG2p fallback for non-heteronym words
 
 # --- Tests (the CI suite mocks the acoustic layer, so torch is not required
 #     to run the mocked tests) ---

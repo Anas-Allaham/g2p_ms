@@ -324,7 +324,7 @@ def build_analysis_payload(
     reference = analysis["reference"]
     decision = analysis["decision"]
     recording = analysis["recording"]
-    return {
+    internal_payload = {
         "scorable": True,
         "quality_warning": not decision.scorable,
         "persisted": persisted,
@@ -346,3 +346,6 @@ def build_analysis_payload(
         "alignment": analysis["api_alignment"],
         "metrics": analysis["metrics"],
     }
+    from .arpabet import to_public_arpabet
+
+    return to_public_arpabet(internal_payload)

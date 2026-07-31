@@ -20,7 +20,12 @@ def test_stateless_analysis_does_not_persist(client, sample_wav):
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["persisted"] is False
-    assert data["reference_ipa"] and data["predicted_ipa"]
+    assert data["reference_arpabet"] and data["predicted_arpabet"]
+    assert "reference_ipa" not in data and "predicted_ipa" not in data
+    assert all(
+        row["expected"] == "-" or row["expected"].isascii()
+        for row in data["alignment"]
+    )
     assert "utterance_score" in data["metrics"]
     assert "processed_audio_data_url" not in data  # audio never returned
     # No leftover audio artifacts.

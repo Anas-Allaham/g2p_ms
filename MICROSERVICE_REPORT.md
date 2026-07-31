@@ -8,21 +8,22 @@ transcription → audio-quality gating → phoneme alignment → provisional sco
 Bayesian mastery → evidence-aware assessment → adaptive exercises) as a clean,
 authenticated HTTP API.
 
-It was extracted from the Flask application **without importing or modifying
-it**. The authoritative AI modules were copied verbatim (`scoring.py`,
+It was extracted from the Flask application **without importing it**. The
+authoritative AI modules were ported (`scoring.py`,
 `mastery.py`, `assessment.py`, `tokenization.py`,
 `phoneme_vectors_professional.py`, `audio_quality.py`, `g2p_service.py`,
 `content.py`, `services.py`, `cleanvoice_service.py`, plus the G2P pipeline and
-model config). Only two layers were rewritten: the HTTP wiring (Flask → FastAPI)
-and persistence (named users → anonymous subjects).
+model config). IPA remains the canonical internal phoneme representation.
+Stress-free ARPAbet is an HTTP boundary format used only in responses from the
+service and in ARPAbet-keyed API inputs.
 
 ## 2. Audit of the source application
 
 | Concern | Finding | How it is preserved here |
 |---|---|---|
-| Scoring formulas | DP alignment + PanPhon articulatory distance, provisional weighted PER | Modules copied verbatim; identical outputs |
+| Scoring formulas | DP alignment + PanPhon articulatory distance, provisional weighted PER | Preserved in IPA; response rows are converted to ARPAbet only after scoring |
 | Trust gate | Mastery updates only when audio scorable **and** PanPhon-trusted **and** reference G2P trusted | Ported exactly in `api/recording.py` |
-| Canonical inventory | Single canonicalizer in `phoneme_vectors_professional` | Unchanged; `test_single_canonicalizer` passes |
+| Canonical inventory | Single IPA canonicalizer in `phoneme_vectors_professional` | Unchanged internally; `test_single_canonicalizer` passes |
 | Mastery model | Per-phoneme Beta posterior, one update/recording, half-life decay | Unchanged |
 | Assessment | Evidence-aware level + Monte-Carlo credible interval; honest status | Unchanged |
 | Private data | 5 users, 56 attempts in `app.db` | **Not imported.** Fresh DB, subjects only |
@@ -30,6 +31,25 @@ and persistence (named users → anonymous subjects).
 | Scientific labelling | "provisional, not GOP, not CEFR" | Preserved in payloads + `/capabilities` |
 
 ## 3. Architecture boundary
+
+```text
+text  -> POS Tagger -> heteronym lexicon / NeMo IpaG2p -> reference IPA
+audio -> Wav2Vec2 CTC                                  -> predicted IPA
+                              |
+                              v
+                  IPA tokenization, PanPhon scoring,
+                  mastery, exercises, and SQLite
+                              |
+                              v
+                 api/arpabet.py response conversion
+                              |
+                              v
+                    ARPAbet -> Django / frontend
+```
+
+NeMo and spaCy POS tagging are the preferred reference path. If either optional
+runtime component cannot load, `g2p_service.py` retains the context-aware IPA
+dictionary fallback and reports that fallback in `g2p_mode`.
 
 ```
 ┌──────────────┐   Bearer service key    ┌─────────────────────────────┐
@@ -60,7 +80,7 @@ Stateful writes require an `Idempotency-Key` header.
 | `GET /health/live` | Public liveness |
 | `GET /health/ready` | Public readiness (model, G2P, DB, bank) — 200/503 |
 | `GET /api/v1/capabilities` | Model/feature/limits/limitations detail |
-| `POST /api/v1/g2p` | Text → IPA + trust/heteronym/OOV/guide |
+| `POST /api/v1/g2p` | Text → stress-free ARPAbet + trust/heteronym/OOV/guide |
 | `PUT /api/v1/subjects/{id}` | Idempotent anonymous profile create |
 | `DELETE /api/v1/subjects/{id}` | Cascade delete all its state |
 | `POST /api/v1/pronunciation/analyses` | Stateless analysis (no state) |

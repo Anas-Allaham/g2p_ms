@@ -36,7 +36,8 @@ def test_success_envelope_shape_and_request_id_header(client):
     assert r.status_code == 200
     body = r.json()
     assert set(body.keys()) == {"data", "meta"}
-    assert body["data"]["ipa"]
+    assert body["data"]["arpabet"]
+    assert "ipa" not in body["data"]
     assert r.headers["X-Request-ID"] == body["meta"]["request_id"]
 
 
@@ -81,5 +82,6 @@ def test_openapi_is_generated(client):
 def test_capabilities_exposes_trust_and_limits(client):
     data = client.get("/api/v1/capabilities").json()["data"]
     assert "scoring" in data and "engine" in data["scoring"]
+    assert data["g2p"]["alphabet"] == "arpabet"
     assert data["limits"]["language"] == "en"
     assert data["scientific_limitations"]["provisional"] is True

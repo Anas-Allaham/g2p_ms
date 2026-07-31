@@ -96,7 +96,7 @@ def client(tmp_path, monkeypatch, seeded_template):
     monkeypatch.setattr(acoustic, "model_config_present", lambda: True)
     monkeypatch.setattr(acoustic, "model_weight_present", lambda: True)
     monkeypatch.setattr(acoustic, "model_loaded", lambda: True)
-    monkeypatch.setattr(acoustic, "transcribe", lambda _path: "s k uː l")
+    monkeypatch.setattr(acoustic, "transcribe", lambda _path: "skuːl")
 
     try:
         # raise_server_exceptions=False so the registered 500 handler's envelope

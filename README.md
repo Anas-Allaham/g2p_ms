@@ -4,6 +4,35 @@ A self-contained FastAPI microservice wrapping the pronunciation-analysis engine
 (G2P → Wav2Vec2 → audio-quality gate → phoneme alignment → provisional scoring →
 Bayesian mastery → evidence-aware assessment → adaptive exercises).
 
+The phonetic engine remains IPA end to end: the POS-aware heteronym resolver
+and NeMo produce the reference IPA, Wav2Vec2 predicts IPA, and PanPhon,
+alignment, mastery, exercises, and persistence all operate on IPA. Only the
+public API boundary converts phoneme-bearing response fields to uppercase,
+stress-free **ARPAbet** (for example, `S K UW L | IH Z`) for Django/frontend
+clients. `|` marks word boundaries and `AX` represents schwa.
+
+The public boundary validates every emitted token against the declared
+stress-free ARPAbet inventory. Formatted reference IPA uses explicit `|` word
+boundaries, while raw CTC output treats whitespace as acoustic word boundaries;
+the adapter no longer guesses which format it received. Unsupported reference
+or API tokens fail explicitly, while CTC-only recovery is non-fatal and logged.
+
+IPA→ARPAbet→IPA is intentionally canonicalizing rather than lossless. It may
+normalize vowel length, allophones, and dialect variants to the service's
+American-English-oriented internal inventory.
+
+```text
+text  -> POS Tagger -> heteronym lexicon / NeMo -> reference IPA
+audio -> Wav2Vec2                              -> predicted IPA
+                         IPA alignment + PanPhon + persistence
+                                           |
+                                           v
+                                API IPA -> ARPAbet adapter
+                                           |
+                                           v
+                                    Django / frontend
+```
+
 It is called **server-to-server** by a Django core that owns authentication and
 user identity. This service stores pronunciation state only under an opaque
 `subject_id` (a UUID with no personal data). It does not import or modify the
@@ -18,6 +47,7 @@ data model, security/privacy, Modal operation, and scaling notes.
 cd pronunciation_ai_service
 python -m venv .venv && source .venv/bin/activate   # or .venv\Scripts\activate on Windows
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 
 cp .env.example .env
 #   set SERVICE_API_KEY to a long random secret
