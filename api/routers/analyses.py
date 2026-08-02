@@ -27,6 +27,7 @@ from ..errors import ValidationError
 from ..recording import persist_recording
 from ..schemas import AnalysisEnvelope
 from ..security import require_service_auth
+from ..pronunciation_feedback import with_pronunciation_errors
 
 router = APIRouter(prefix=f"/api/{API_VERSION}", tags=["analyses"], dependencies=[Depends(require_service_auth)])
 
@@ -84,7 +85,7 @@ def analyze_for_subject(
     # Replay a completed identical retry verbatim.
     replay = db.get_idempotent_response(scope, idempotency_key)
     if replay is not None:
-        return {"data": replay, "meta": build_meta(request)}
+        return {"data": with_pronunciation_errors(replay), "meta": build_meta(request)}
 
     subject = db.get_or_create_subject(subject_id)
     user_id = subject["id"]

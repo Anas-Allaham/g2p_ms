@@ -9,7 +9,7 @@ so the authoritative domain output is never silently truncated.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -72,6 +72,23 @@ class DeletedSubjectData(BaseModel):
 
 
 # ---- analysis --------------------------------------------------------------
+class ReferenceSpan(BaseModel):
+    start: int = Field(..., ge=0, description="Inclusive UTF-16 code-unit offset into AnalysisData.text.")
+    end: int = Field(..., ge=0, description="Inclusive UTF-16 code-unit offset into AnalysisData.text.")
+    text: str
+    kind: Literal["grapheme", "word_fallback", "boundary"]
+
+
+class PronunciationError(BaseModel):
+    alignment_index: int = Field(..., ge=0, description="Zero-based index into the alignment array.")
+    operation: Literal["substitution", "deletion", "insertion"]
+    result: str
+    expected: Optional[str]
+    spoken: Optional[str]
+    word_index: Optional[int] = Field(None, ge=1, description="One-based reference word index when available.")
+    reference_span: ReferenceSpan
+
+
 class AnalysisData(BaseModel):
     """Superset of the stateless and stateful analysis payloads. Extra fields
     are allowed so the full domain output (guides, provenance, diagnostics)
@@ -86,6 +103,7 @@ class AnalysisData(BaseModel):
     scoring_trusted: bool
     metrics: Dict[str, Any]
     alignment: List[Dict[str, Any]]
+    pronunciation_errors: List[PronunciationError] = Field(default_factory=list)
     audio_quality: Dict[str, Any]
 
 

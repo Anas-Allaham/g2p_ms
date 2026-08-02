@@ -71,6 +71,35 @@ Every `/api/v1` route requires `Authorization: Bearer <SERVICE_API_KEY>`.
 Stateful writes (`/subjects/{id}/analyses`, `/subjects/{id}/exercises/next`)
 also require an `Idempotency-Key` header so retries never duplicate evidence.
 
+## Pronunciation error ranges
+
+Both analysis endpoints include an additive `pronunciation_errors` array. Each
+item links a non-correct phoneme alignment row to the relevant spelling in the
+trimmed response `text`:
+
+```json
+{
+  "alignment_index": 1,
+  "operation": "substitution",
+  "result": "major_substitution",
+  "expected": "K",
+  "spoken": "T",
+  "word_index": 1,
+  "reference_span": {
+    "start": 1,
+    "end": 2,
+    "text": "ch",
+    "kind": "grapheme"
+  }
+}
+```
+
+`start` and `end` are inclusive browser-compatible UTF-16 code-unit indexes, so
+JavaScript clients can read a range with `text.slice(start, end + 1)`.
+`word_fallback` spans cover the whole word when English spelling cannot be
+mapped confidently; insertions use an empty `boundary` marker with equal
+indexes and should not be sliced as a letter range.
+
 ## Tests
 
 ```bash

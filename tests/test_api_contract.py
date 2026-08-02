@@ -78,6 +78,11 @@ def test_openapi_is_generated(client):
     ):
         assert p in paths
 
+    analysis_schema = schema["components"]["schemas"]["AnalysisData"]
+    assert "pronunciation_errors" in analysis_schema["properties"]
+    assert "PronunciationError" in schema["components"]["schemas"]
+    assert "ReferenceSpan" in schema["components"]["schemas"]
+
 
 def test_capabilities_exposes_trust_and_limits(client):
     data = client.get("/api/v1/capabilities").json()["data"]

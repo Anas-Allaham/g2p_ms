@@ -347,5 +347,6 @@ def build_analysis_payload(
         "metrics": analysis["metrics"],
     }
     from .arpabet import to_public_arpabet
+    from .pronunciation_feedback import with_pronunciation_errors
 
-    return to_public_arpabet(internal_payload)
+    return with_pronunciation_errors(to_public_arpabet(internal_payload))

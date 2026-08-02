@@ -27,9 +27,80 @@ def test_stateless_analysis_does_not_persist(client, sample_wav):
         for row in data["alignment"]
     )
     assert "utterance_score" in data["metrics"]
+    assert data["pronunciation_errors"] == []
     assert "processed_audio_data_url" not in data  # audio never returned
     # No leftover audio artifacts.
     assert _uploads_snapshot() == before
+
+
+def test_both_analysis_endpoints_return_letter_ranged_errors(client, sample_wav, monkeypatch):
+    from api import acoustic
+
+    monkeypatch.setattr(acoustic, "transcribe", lambda _path: "stu\u02d0l")
+    stateless = client.post(
+        "/api/v1/pronunciation/analyses",
+        data={"text": "school"},
+        files={"audio": ("rec.wav", sample_wav, "audio/wav")},
+    ).json()["data"]
+
+    subject = "an-letter-errors"
+    client.put(f"/api/v1/subjects/{subject}")
+    stateful = client.post(
+        f"/api/v1/subjects/{subject}/analyses",
+        data={"text": "school"},
+        files={"audio": ("rec.wav", sample_wav, "audio/wav")},
+        headers={"Idempotency-Key": "letter-error-key"},
+    ).json()["data"]
+
+    assert stateless["pronunciation_errors"] == stateful["pronunciation_errors"]
+    error = stateless["pronunciation_errors"][0]
+    assert error["operation"] == "substitution"
+    assert error["expected"] == "K"
+    assert error["spoken"] == "T"
+    assert error["reference_span"] == {
+        "start": 1,
+        "end": 2,
+        "text": "ch",
+        "kind": "grapheme",
+    }
+    assert all("ipa" not in key for key in error)
+
+
+def test_old_idempotent_analysis_response_is_enriched_on_replay(client, sample_wav, monkeypatch):
+    import json
+
+    from api import acoustic
+    from src.core.persistence import db
+
+    monkeypatch.setattr(acoustic, "transcribe", lambda _path: "stu\u02d0l")
+    subject = "an-old-replay"
+    key = "old-response-key"
+    client.put(f"/api/v1/subjects/{subject}")
+    first = client.post(
+        f"/api/v1/subjects/{subject}/analyses",
+        data={"text": "school"},
+        files={"audio": ("rec.wav", sample_wav, "audio/wav")},
+        headers={"Idempotency-Key": key},
+    ).json()["data"]
+
+    legacy = dict(first)
+    legacy.pop("pronunciation_errors")
+    scope = f"analysis:{subject}"
+    conn = db.get_connection()
+    with conn:
+        conn.execute(
+            "UPDATE idempotency_keys SET response_json = ? WHERE scope = ? AND key = ?",
+            (json.dumps(legacy), scope, key),
+        )
+
+    replay = client.post(
+        f"/api/v1/subjects/{subject}/analyses",
+        data={"text": "school"},
+        files={"audio": ("rec.wav", sample_wav, "audio/wav")},
+        headers={"Idempotency-Key": key},
+    ).json()["data"]
+    assert replay["attempt_id"] == first["attempt_id"]
+    assert replay["pronunciation_errors"] == first["pronunciation_errors"]
 
 
 def test_stateful_analysis_persists_and_updates_trusted_mastery(client, sample_wav):
