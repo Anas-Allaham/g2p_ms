@@ -244,12 +244,16 @@ def process_recording(audio_path: Path) -> Dict[str, Any]:
     return result
 
 
-def analyze_recording(user_text: str, audio_path: Path, cleanup_paths: List[Optional[Path]]) -> Dict[str, Any]:
+def analyze_recording(
+    user_text: str,
+    audio_path: Path,
+    cleanup_paths: List[Optional[Path]],
+    reference: Any = None,
+) -> Dict[str, Any]:
     """Run the full stateless analysis for one saved upload and return an
     ``analysis`` bundle: the client-facing fields plus the internal alignment /
     metrics / decision needed to persist an attempt. Appends every produced
     artifact to ``cleanup_paths``. Does NOT persist anything."""
-    from src.core.g2p.g2p_service import g2p_convert_with_metadata
     from src.core.g2p.phoneme_vectors_professional import scoring_engine, scoring_trusted
     from src.core.scoring.scoring import align_phonemes, calculate_metrics, to_api_alignment
     from src.core.g2p.tokenization import (
@@ -258,7 +262,10 @@ def analyze_recording(user_text: str, audio_path: Path, cleanup_paths: List[Opti
         tokenize_reference_ipa,
     )
 
-    reference = g2p_convert_with_metadata(user_text)
+    if reference is None:
+        from .reference_validation import resolve_supported_reference
+
+        reference = resolve_supported_reference(user_text)
     reference_ipa = reference.ipa
 
     recording = process_recording(audio_path)

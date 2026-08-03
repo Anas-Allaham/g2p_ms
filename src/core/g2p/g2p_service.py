@@ -24,6 +24,14 @@ G2P_DIR = PROJECT_ROOT / "g2p_pipeline_split_v2"
 HETERONYMS_PATH = G2P_DIR / "heteronyms.json"
 IPA_DICT_PATH = G2P_DIR / "cmudict-0.7b-ipa.txt"
 
+# Curated pronunciations for common product names/initialisms that are absent
+# from the bundled CMU-derived dictionary. These are trusted references, not
+# grapheme fallbacks. Keep this list deliberately small and reviewed.
+CURATED_IPA_OVERRIDES: Dict[str, str] = {
+    "chatgpt": "tʃ æ t dʒ iː p iː t iː",
+    "gpt": "dʒ iː p iː t iː",
+}
+
 g2p_engine = None
 g2p_mode = "not_loaded"
 
@@ -262,7 +270,7 @@ class DictionaryIpaG2p:
         self.resolver = resolver or ContextualHeteronymResolver()
 
     def _lookup_non_heteronym(self, word: str) -> Tuple[str, bool]:
-        ipa = self.dictionary.get(word)
+        ipa = CURATED_IPA_OVERRIDES.get(word) or self.dictionary.get(word)
         return (ipa, True) if ipa is not None else (word, False)
 
     def resolve(self, text: str) -> ReferenceG2PResult:
