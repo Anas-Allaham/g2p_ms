@@ -25,6 +25,7 @@ from ..dependencies import require_idempotency_key, save_upload, valid_subject_i
 from ..envelopes import build_meta, success
 from ..errors import ValidationError
 from ..recording import persist_recording
+from ..reference_validation import resolve_supported_reference
 from ..schemas import AnalysisEnvelope
 from ..security import require_service_auth
 from ..pronunciation_feedback import with_pronunciation_errors
@@ -55,12 +56,15 @@ def analyze_stateless(
     audio: UploadFile = File(...),
 ):
     user_text = _require_text(text)
+    reference = resolve_supported_reference(user_text)
     cleanup_paths: List[Optional[Path]] = []
     audio_path = analysis_mod.new_upload_path(audio.content_type or "")
     cleanup_paths.extend(analysis_mod.candidate_cleanup_paths(audio_path))
     try:
         save_upload(audio, audio_path)
-        result = analysis_mod.analyze_recording(user_text, audio_path, cleanup_paths)
+        result = analysis_mod.analyze_recording(
+            user_text, audio_path, cleanup_paths, reference=reference
+        )
         payload = analysis_mod.build_analysis_payload(result, user_text, mastery_updated=False, persisted=False)
         return success(payload, request)
     finally:
@@ -79,6 +83,7 @@ def analyze_for_subject(
     from src.core.persistence import db
 
     user_text = _require_text(text)
+    reference = resolve_supported_reference(user_text)
     parsed_exercise_id = _parse_exercise_id(exercise_id)
 
     scope = f"analysis:{subject_id}"
@@ -101,7 +106,9 @@ def analyze_for_subject(
     cleanup_paths.extend(analysis_mod.candidate_cleanup_paths(audio_path))
     try:
         save_upload(audio, audio_path)
-        result = analysis_mod.analyze_recording(user_text, audio_path, cleanup_paths)
+        result = analysis_mod.analyze_recording(
+            user_text, audio_path, cleanup_paths, reference=reference
+        )
         record = persist_recording(
             user_id=user_id,
             user_text=user_text,

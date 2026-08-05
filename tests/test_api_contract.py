@@ -41,6 +41,23 @@ def test_success_envelope_shape_and_request_id_header(client):
     assert r.headers["X-Request-ID"] == body["meta"]["request_id"]
 
 
+def test_curated_chatgpt_pronunciation_is_returned_as_arpabet(client):
+    r = client.post("/api/v1/g2p", json={"text": "chatgpt"})
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["arpabet"] == "CH AE T JH IY P IY T IY"
+    assert data["reference_g2p_trusted"] is True
+    assert data["oov_words"] == []
+
+
+def test_unknown_g2p_word_returns_structured_oov_error(client):
+    r = client.post("/api/v1/g2p", json={"text": "zzzxxyyq"})
+    assert r.status_code == 422
+    error = r.json()["error"]
+    assert error["code"] == "g2p_oov"
+    assert error["details"]["oov_words"] == ["zzzxxyyq"]
+
+
 def test_incoming_request_id_is_echoed(client):
     r = client.post("/api/v1/g2p", json={"text": "hi"}, headers={"X-Request-ID": "abc123"})
     assert r.headers["X-Request-ID"] == "abc123"

@@ -20,12 +20,12 @@ router = APIRouter(prefix=f"/api/{API_VERSION}", tags=["g2p"], dependencies=[Dep
 
 @router.post("/g2p", response_model=G2PEnvelope)
 def convert(payload: G2PRequest, request: Request):
-    from src.core.g2p.g2p_service import g2p_convert_with_metadata
     from src.core.g2p.tokenization import ipa_reading_guide
     from ..arpabet import to_public_arpabet
+    from ..reference_validation import resolve_supported_reference
 
     text = payload.text.strip()
-    resolution = g2p_convert_with_metadata(text)
+    resolution = resolve_supported_reference(text)
     internal_data = {
         "text": text,
         "ipa": resolution.ipa,

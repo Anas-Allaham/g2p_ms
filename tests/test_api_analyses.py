@@ -230,3 +230,22 @@ def test_missing_ffmpeg_for_compressed_audio_is_clear_400(client, sample_wav, mo
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "audio_decode_unavailable"
     assert _uploads_snapshot() == before
+
+
+def test_oov_analysis_is_rejected_before_acoustic_processing(client, sample_wav, monkeypatch):
+    from api import acoustic
+
+    monkeypatch.setattr(
+        acoustic,
+        "transcribe",
+        lambda _path: pytest.fail("acoustic transcription must not run for OOV text"),
+    )
+    before = _uploads_snapshot()
+    r = client.post(
+        "/api/v1/pronunciation/analyses",
+        data={"text": "zzzxxyyq"},
+        files={"audio": ("rec.wav", sample_wav, "audio/wav")},
+    )
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "g2p_oov"
+    assert _uploads_snapshot() == before
