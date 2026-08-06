@@ -14,6 +14,7 @@ core does not need a create round-trip before its first read.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -133,9 +134,25 @@ def get_attempts(
             "scorable": bool(r["scorable"]),
             "mastery_updated": bool(r["mastery_updated"]),
             "scoring_engine": r["scoring_engine"],
+            "audio_processing": _safe_audio_processing(r),
             "created_at": r["created_at"],
         }
         for r in page
     ]
     next_cursor = str(page[-1]["id"]) if (has_more and page) else None
     return success({"attempts": attempts, "next_cursor": next_cursor, "has_more": has_more}, request)
+
+
+def _safe_audio_processing(row) -> dict:
+    """Expose quality/status only; never expose storage paths or exceptions."""
+    try:
+        metadata = json.loads(row["audio_quality_metadata"] or "{}")
+    except (KeyError, TypeError, json.JSONDecodeError):
+        metadata = {}
+    return {
+        "status": row["audio_processing_status"],
+        "scoring_allowed": bool(metadata.get("scoring_allowed", row["scorable"])),
+        "rejection_reasons": list(metadata.get("rejection_reasons", [])),
+        "duration_seconds": metadata.get("duration_seconds"),
+        "speech_seconds": metadata.get("speech_seconds"),
+    }

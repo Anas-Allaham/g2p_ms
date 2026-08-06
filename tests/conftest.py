@@ -20,6 +20,10 @@ if str(ROOT) not in sys.path:
 # Must be set before api.config imports settings.
 os.environ.setdefault("SERVICE_API_KEY", "test-service-key")
 os.environ.setdefault("RETAIN_AUDIO", "0")
+# Integration/model tests opt in explicitly. A developer's local .env may
+# enable the real cleaning pipeline, but the deterministic suite must not load
+# FFmpeg or download DeepFilterNet/Silero models.
+os.environ["AUDIO_CLEANING_ENABLED"] = "0"
 
 import pytest
 

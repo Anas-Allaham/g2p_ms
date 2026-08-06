@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import API_VERSION, SERVICE_NAME, settings
 from .envelopes import REQUEST_ID_HEADER, error_body, new_request_id
 from .errors import ServiceError
-from .routers import analyses, capabilities, exercises, g2p, health, subjects
+from .routers import analyses, audio, capabilities, exercises, g2p, health, subjects
 
 from src.core.persistence.db import IdempotencyConflict as _IdempotencyConflict
 
@@ -64,7 +64,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for module in (health, capabilities, g2p, subjects, analyses, exercises):
+    for module in (health, capabilities, g2p, subjects, analyses, audio, exercises):
         app.include_router(module.router)
 
     @app.get("/", tags=["meta"])

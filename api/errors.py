@@ -73,11 +73,6 @@ class AudioDecodeError(ServiceError):
     code = "audio_decode_unavailable"
 
 
-class CleanvoiceUnavailableError(ServiceError):
-    status_code = 502
-    code = "cleanvoice_unavailable"
-
-
 class ConflictError(ServiceError):
     status_code = 409
     code = "conflict"

@@ -88,6 +88,7 @@ def test_openapi_is_generated(client):
         "/api/v1/subjects/{subject_id}",
         "/api/v1/pronunciation/analyses",
         "/api/v1/subjects/{subject_id}/analyses",
+        "/api/v1/audio/clean",
         "/api/v1/exercises/generate",
         "/api/v1/subjects/{subject_id}/exercises/next",
         "/api/v1/capabilities",

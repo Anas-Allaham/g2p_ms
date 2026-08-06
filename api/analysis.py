@@ -2,9 +2,10 @@
 Audio analysis pipeline — the ported acoustic/scoring wiring from the Flask
 app, minus HTTP and persistence.
 
-Flow (unchanged behaviour): convert to 16 kHz mono WAV -> advisory quality
-diagnostics -> optional Cleanvoice / local noise reduction -> Wav2Vec2
-transcription -> reference G2P -> phoneme alignment -> provisional metrics.
+Flow: preserve the upload -> optional DeepFilterNet 48 kHz cleanup -> Silero
+VAD + 16 kHz STT input -> Wav2Vec2 transcription -> reference G2P -> phoneme
+alignment -> provisional metrics. The original signal remains the quality /
+scoring evidence source; cleaned audio is never silently substituted for it.
 
 Nothing here writes to the database or returns audio. Every on-disk artifact
 this produces is registered in a ``cleanup_paths`` list the caller deletes in
@@ -14,19 +15,19 @@ success or failure.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
-import subprocess
-import sys
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import settings
-from .errors import AudioDecodeError, CleanvoiceUnavailableError
+from .errors import AudioDecodeError, ServiceError
+
+logger = logging.getLogger(__name__)
 
 SERVICE_ROOT = Path(__file__).resolve().parent.parent
-VOICE_FILTERING_DIR = SERVICE_ROOT / "voice-filtering"
 
 # Uploads are ephemeral and private: written here, then deleted in the caller's
 # finally block. Never place this on a persistent Modal Volume.
@@ -38,51 +39,17 @@ def new_upload_path(mimetype: str) -> Path:
     """A unique temp path for one incoming recording."""
     return UPLOAD_DIR / f"{uuid.uuid4().hex}{extension_for_mimetype(mimetype)}"
 
-try:
-    import noisereduce as nr
-except Exception:  # pragma: no cover
-    nr = None
-
-try:
-    import soundfile as sf
-except Exception:  # pragma: no cover
-    sf = None
-
-if str(VOICE_FILTERING_DIR) not in sys.path:
-    sys.path.insert(0, str(VOICE_FILTERING_DIR))
-
-try:
-    from audio_filter_safe import process_audio_file as safe_process_audio_file
-except Exception as exc:  # pragma: no cover
-    safe_process_audio_file = None
-    print("audio_filter_safe is unavailable. Falling back to legacy preprocessing.")
-    print("Reason:", repr(exc))
-
-
 def _find_ffmpeg_executable() -> Optional[str]:
-    import os
-
-    configured = os.environ.get("FFMPEG_BINARY", "").strip()
-    if configured:
-        configured_path = Path(configured)
-        if configured_path.exists():
-            return str(configured_path)
-        found = shutil.which(configured)
-        if found:
-            return found
-    found = shutil.which("ffmpeg")
-    if found:
-        return found
     try:
-        import imageio_ffmpeg
+        from src.core.audio.audio_cleaning import find_ffmpeg
 
-        return imageio_ffmpeg.get_ffmpeg_exe()
+        return find_ffmpeg()
     except Exception:
         return None
 
 
 def convert_audio_to_wav(input_path: Path) -> Path:
-    """Convert browser audio to 16 kHz mono WAV when FFmpeg is available."""
+    """Compatibility conversion used when the new cleaner is disabled."""
     input_path = Path(input_path)
     output_path = input_path.with_name(input_path.stem + "_converted.wav")
     if output_path.exists():
@@ -93,20 +60,20 @@ def convert_audio_to_wav(input_path: Path) -> Path:
     if ffmpeg is None:
         raise AudioDecodeError(
             "This recording is a compressed format that needs FFmpeg to decode. "
-            "Install FFmpeg or `pip install imageio-ffmpeg` on the service host."
+            "Install FFmpeg and place it on PATH (or configure FFMPEG_BINARY)."
         )
-    command = [ffmpeg, "-y", "-i", str(input_path), "-ac", "1", "-ar", "16000", str(output_path)]
     try:
-        completed = subprocess.run(
-            command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+        from src.core.audio.audio_cleaning import convert_with_ffmpeg
+
+        return convert_with_ffmpeg(
+            input_path,
+            output_path,
+            sample_rate=16_000,
+            timeout_seconds=settings.audio_cleaning_timeout_seconds,
+            ffmpeg_binary=ffmpeg,
         )
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or "").strip().splitlines()
-        tail = detail[-1] if detail else "FFmpeg could not decode the uploaded recording."
-        raise AudioDecodeError(f"Could not decode the uploaded recording: {tail}") from exc
-    if completed.returncode != 0 or not output_path.exists() or output_path.stat().st_size == 0:
-        raise AudioDecodeError("Could not decode the uploaded recording into WAV.")
-    return output_path
+    except Exception as exc:
+        raise AudioDecodeError("Could not decode the uploaded recording into WAV.") from exc
 
 
 def extension_for_mimetype(mimetype: str) -> str:
@@ -122,40 +89,9 @@ def extension_for_mimetype(mimetype: str) -> str:
     return ".webm"
 
 
-def _apply_noise_reduction(wav_path: Path, reduced_path: Path):
-    """Best-effort mild noise reduction. Returns
-    (model_input_path, noise_reduction_applied, preprocessing_pipeline)."""
-    import librosa
-
-    if safe_process_audio_file is not None:
-        try:
-            safe_process_audio_file(input_path=wav_path, output_path=reduced_path, use_noise_reduce=True)
-            if reduced_path.exists():
-                applied = nr is not None
-                pipeline = "audio_filter_safe" if applied else "audio_filter_safe_without_noisereduce"
-                return reduced_path, applied, pipeline
-        except Exception as exc:
-            print("audio_filter_safe failed. Falling back to legacy noisereduce.")
-            print("Reason:", repr(exc))
-
-    audio_array, sr = librosa.load(str(wav_path), sr=16000, mono=True)
-    if nr is not None:
-        reduced = nr.reduce_noise(y=audio_array, sr=sr, stationary=False, prop_decrease=0.35)
-        pipeline, applied = "legacy_noisereduce", True
-    else:
-        reduced, pipeline, applied = audio_array, "raw_audio_fallback", False
-    if sf is not None:
-        sf.write(str(reduced_path), reduced, sr)
-        if reduced_path.exists():
-            return reduced_path, applied, pipeline
-    return wav_path, applied, pipeline
-
-
 def cleanup_audio_files(paths: List[Optional[Path]]) -> None:
-    """Delete temporary recording files (original, converted, reduced,
-    cleanvoice) unless retention is explicitly enabled. Recordings are private
-    by default. Never raises."""
-    if settings.retain_audio:
+    """Delete private request artifacts unless explicit local retention is on."""
+    if settings.retain_audio or settings.audio_cleaning_keep_intermediate_files:
         return
     seen = set()
     for path in paths:
@@ -166,81 +102,263 @@ def cleanup_audio_files(paths: List[Optional[Path]]) -> None:
             if resolved in seen:
                 continue
             seen.add(resolved)
-            if resolved.exists():
+            if resolved.is_dir():
+                shutil.rmtree(resolved)
+            elif resolved.exists():
                 resolved.unlink()
         except Exception as exc:
             print("Could not delete temporary audio:", repr(exc))
 
 
 def candidate_cleanup_paths(audio_path: Path) -> List[Path]:
-    """Every filename the recording pipeline can create for one upload."""
+    """Compatibility files plus the immutable uploaded original."""
     audio_path = Path(audio_path)
     return [
         audio_path,
         audio_path.with_name(audio_path.stem + "_converted.wav"),
-        audio_path.with_name(audio_path.stem + "_cleanvoice.wav"),
-        audio_path.with_name(audio_path.stem + "_reduced.wav"),
     ]
 
 
+_CLEANVOICE_FALLBACK_ERROR_CODES = frozenset(
+    {
+        "deepfilternet_initialization_failed",
+        "deepfilternet_processing_failed",
+        "silero_vad_initialization_failed",
+        "silero_vad_failed",
+        "audio_measurement_failed",
+        "invalid_generated_output",
+        "processing_timeout",
+        "processing_failed",
+    }
+)
+
+
+def _energy_speech_segments(path: Path) -> List[Dict[str, float]]:
+    """Conservative VAD fallback used only if Silero itself is unavailable."""
+    import numpy as np
+    import soundfile as sf
+
+    samples, sample_rate = sf.read(str(path), dtype="float32", always_2d=False)
+    audio = np.asarray(samples, dtype=np.float32)
+    if audio.ndim != 1 or audio.size == 0 or int(sample_rate) <= 0:
+        return []
+    frame_size = max(1, int(sample_rate * 0.03))
+    frame_count = int(np.ceil(audio.size / frame_size))
+    padded = np.pad(audio, (0, frame_count * frame_size - audio.size))
+    rms = np.sqrt(np.mean(padded.reshape(frame_count, frame_size) ** 2, axis=1))
+    peak_rms = float(np.max(rms)) if rms.size else 0.0
+    if peak_rms < 0.003:
+        return []
+    noise_floor = float(np.percentile(rms, 20))
+    threshold = max(0.003, min(noise_floor * 2.5, peak_rms * 0.35))
+    active = rms >= threshold
+    segments: List[Dict[str, float]] = []
+    start: Optional[int] = None
+    for index, is_active in enumerate(active.tolist() + [False]):
+        if is_active and start is None:
+            start = index
+        elif not is_active and start is not None:
+            segments.append(
+                {
+                    "start": round(start * frame_size / sample_rate, 3),
+                    "end": round(min(index * frame_size, audio.size) / sample_rate, 3),
+                }
+            )
+            start = None
+    return segments
+
+
+def _clean_with_cleanvoice_fallback(
+    audio_path: Path,
+    *,
+    primary_error_code: str,
+) -> Dict[str, Any]:
+    """Run external enhancement, then restore the service's exact WAV contract."""
+    from src.core.audio.audio_cleaning import (
+        AudioCleaningError,
+        ORIGINAL_SAMPLE_RATE,
+        STT_SAMPLE_RATE,
+        _sha256,
+        cleaner_from_settings,
+        convert_with_ffmpeg,
+    )
+    from src.core.audio.cleanvoice_service import enhance_recording
+
+    source = Path(audio_path).resolve()
+    source_hash = _sha256(source)
+    root = Path(settings.audio_cleaning_output_dir).expanduser().resolve()
+    processing_dir = root / (
+        f"{source.stem}-{uuid.uuid4().hex}_cleanvoice_fallback"
+    )
+    normalized_48k = processing_dir / "source_48k_mono.wav"
+    provider_output = processing_dir / "cleanvoice_output.wav"
+    cleaned_48k = processing_dir / "cleaned_48k_mono.wav"
+    cleaned_16k = processing_dir / "cleaned_16k_mono.wav"
+    try:
+        processing_dir.mkdir(parents=True, exist_ok=False)
+        timeout = float(settings.audio_cleaning_timeout_seconds)
+        convert_with_ffmpeg(
+            source,
+            normalized_48k,
+            sample_rate=ORIGINAL_SAMPLE_RATE,
+            timeout_seconds=timeout,
+        )
+        enhance_recording(normalized_48k, provider_output)
+        convert_with_ffmpeg(
+            provider_output,
+            cleaned_48k,
+            sample_rate=ORIGINAL_SAMPLE_RATE,
+            timeout_seconds=timeout,
+        )
+        convert_with_ffmpeg(
+            cleaned_48k,
+            cleaned_16k,
+            sample_rate=STT_SAMPLE_RATE,
+            timeout_seconds=timeout,
+        )
+
+        cleaner = cleaner_from_settings(settings)
+        vad_method = "silero_vad"
+        try:
+            segments = cleaner._run_silero_vad(cleaned_16k, "cpu")
+        except AudioCleaningError:
+            segments = _energy_speech_segments(cleaned_16k)
+            vad_method = "energy_vad"
+        metadata = cleaner._quality_metadata(normalized_48k, segments, "external")
+        if _sha256(source) != source_hash:
+            raise AudioCleaningError(
+                "original_audio_changed",
+                "The original recording changed during processing.",
+            )
+        metadata.update(
+            {
+                "pipeline": f"ffmpeg_cleanvoice_fallback_{vad_method}",
+                "cleaning_backend": "cleanvoice",
+                "fallback_used": True,
+                "primary_error_code": primary_error_code,
+                "speech_detection_method": vad_method,
+            }
+        )
+        return {
+            "original_audio_path": source,
+            "normalized_audio_48k_path": normalized_48k,
+            "cleaned_audio_48k_path": cleaned_48k,
+            "cleaned_audio_16k_path": cleaned_16k,
+            "reduced_audio_path": cleaned_16k,
+            "noise_reduction_applied": True,
+            "preprocessing_pipeline": metadata["pipeline"],
+            "audio_processing": metadata,
+            "cleanup_paths": [processing_dir],
+        }
+    except Exception:
+        if not (
+            settings.retain_audio
+            or settings.audio_cleaning_keep_intermediate_files
+        ):
+            shutil.rmtree(processing_dir, ignore_errors=True)
+        raise
+
+
+def clean_recording(audio_path: Path, wav_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Create cleaned 48/16 kHz WAVs and VAD/quality metadata."""
+    del wav_path  # kept only for backwards-compatible callers
+    from src.core.audio.audio_cleaning import AudioCleaningError, cleaner_from_settings
+    from src.core.audio.cleanvoice_service import cleanvoice_fallback_configured
+
+    try:
+        cleaned = cleaner_from_settings(settings).process(Path(audio_path))
+    except AudioCleaningError as exc:
+        if (
+            exc.code in _CLEANVOICE_FALLBACK_ERROR_CODES
+            and cleanvoice_fallback_configured()
+        ):
+            logger.warning(
+                "local_audio_cleaning_failed_using_cleanvoice_fallback",
+                extra={"primary_error_code": exc.code},
+            )
+            try:
+                return _clean_with_cleanvoice_fallback(
+                    Path(audio_path),
+                    primary_error_code=exc.code,
+                )
+            except Exception as fallback_exc:
+                logger.error(
+                    "cleanvoice_audio_fallback_failed",
+                    extra={"primary_error_code": exc.code},
+                    exc_info=True,
+                )
+                raise ServiceError(
+                    "Audio cleaning failed locally and with the configured fallback.",
+                    code="audio_cleaning_all_providers_failed",
+                    status_code=502,
+                ) from fallback_exc
+        raise ServiceError(
+            exc.user_message,
+            code=exc.code,
+            status_code=exc.status_code,
+        ) from exc
+    return {
+        "original_audio_path": cleaned.original_audio_path,
+        "normalized_audio_48k_path": cleaned.normalized_audio_48k_path,
+        "cleaned_audio_48k_path": cleaned.cleaned_audio_48k_path,
+        "cleaned_audio_16k_path": cleaned.cleaned_audio_16k_path,
+        # Compatibility key used by the existing acoustic transcription seam.
+        "reduced_audio_path": cleaned.cleaned_audio_16k_path,
+        "noise_reduction_applied": True,
+        "preprocessing_pipeline": cleaned.metadata["pipeline"],
+        "audio_processing": cleaned.metadata,
+        "cleanup_paths": [cleaned.processing_directory],
+    }
+
+
 def process_recording(audio_path: Path) -> Dict[str, Any]:
-    """Convert -> inspect quality -> enhance -> transcribe. Mirrors the Flask
-    pipeline exactly. ``cleanup_paths`` lists every on-disk artifact produced so
-    the caller can delete them (private/temporary by default)."""
+    """Inspect original evidence, clean for STT when enabled, then transcribe."""
     import librosa
 
     from src.core.audio.audio_quality import analyze_audio_quality
-    from src.core.audio.cleanvoice_service import (
-        CleanvoiceProcessingError,
-        cleanvoice_configured,
-        cleanvoice_strict,
-        enhance_recording,
-    )
-
     from . import acoustic
 
-    wav_path = convert_audio_to_wav(audio_path)
-    raw_audio, sr = librosa.load(str(wav_path), sr=16000, mono=True)
+    if settings.audio_cleaning_enabled:
+        cleaned = clean_recording(audio_path)
+        quality_source = cleaned["normalized_audio_48k_path"]
+    else:
+        wav_path = convert_audio_to_wav(audio_path)
+        quality_source = wav_path
+        cleaned = {
+            "original_audio_path": Path(audio_path),
+            "normalized_audio_48k_path": None,
+            "cleaned_audio_48k_path": None,
+            "cleaned_audio_16k_path": wav_path,
+            "reduced_audio_path": wav_path,
+            "noise_reduction_applied": False,
+            "preprocessing_pipeline": "audio_cleaning_disabled",
+            "audio_processing": {
+                "processing_status": "disabled",
+                "noise_reduction_applied": False,
+                "scoring_allowed": True,
+                "rejection_reasons": [],
+                "pipeline": "audio_cleaning_disabled",
+            },
+            "cleanup_paths": candidate_cleanup_paths(Path(audio_path)),
+        }
+
+    raw_audio, sr = librosa.load(str(quality_source), sr=16000, mono=True)
     decision = analyze_audio_quality(raw_audio, sr)
+    cleaning_metadata = cleaned["audio_processing"]
+    if not cleaning_metadata.get("scoring_allowed", True):
+        decision.scorable = False
+        decision.quality_weight = 0.0
+        for reason in cleaning_metadata.get("rejection_reasons", []):
+            if reason not in decision.reasons:
+                decision.reasons.append(reason)
+    decision.metrics["audio_cleaning"] = cleaning_metadata
 
     result: Dict[str, Any] = {
         "quality_decision": decision,
         "predicted_ipa": None,
-        "reduced_audio_path": None,
-        "noise_reduction_applied": False,
-        "preprocessing_pipeline": "not_processed",
-        "cleanvoice_applied": False,
-        "cleanvoice_error": None,
-        "cleanup_paths": [audio_path, wav_path],
     }
-    cleanvoice_path = audio_path.with_name(audio_path.stem + "_cleanvoice.wav")
-    result["cleanup_paths"].append(cleanvoice_path)
-    applied = False
-    pipeline = "raw_audio_fallback"
-
-    if cleanvoice_configured():
-        try:
-            model_input_path = enhance_recording(wav_path, cleanvoice_path)
-            applied = True
-            pipeline = "cleanvoice_noise_reduction_normalization"
-            result["cleanvoice_applied"] = True
-        except CleanvoiceProcessingError as exc:
-            result["cleanvoice_error"] = str(exc)
-            if cleanvoice_strict():
-                raise CleanvoiceUnavailableError(str(exc))
-            reduced_path = audio_path.with_name(audio_path.stem + "_reduced.wav")
-            model_input_path, applied, local_pipeline = _apply_noise_reduction(wav_path, reduced_path)
-            pipeline = f"cleanvoice_failed_fallback:{local_pipeline}"
-            result["cleanup_paths"].append(reduced_path)
-    else:
-        reduced_path = audio_path.with_name(audio_path.stem + "_reduced.wav")
-        model_input_path, applied, pipeline = _apply_noise_reduction(wav_path, reduced_path)
-        result["cleanup_paths"].append(reduced_path)
-
-    result["noise_reduction_applied"] = applied
-    result["preprocessing_pipeline"] = pipeline
-    result["reduced_audio_path"] = model_input_path if model_input_path.exists() else None
-    result["predicted_ipa"] = acoustic.transcribe(model_input_path)
+    result.update(cleaned)
+    result["predicted_ipa"] = acoustic.transcribe(result["reduced_audio_path"])
     return result
 
 
@@ -347,8 +465,7 @@ def build_analysis_payload(
         "mastery_note": mastery_note_for(analysis),
         "noise_reduction_applied": recording["noise_reduction_applied"],
         "preprocessing_pipeline": recording["preprocessing_pipeline"],
-        "cleanvoice_applied": recording.get("cleanvoice_applied", False),
-        "cleanvoice_error": recording.get("cleanvoice_error"),
+        "audio_processing": recording.get("audio_processing", {}),
         "audio_quality": decision.to_dict(),
         "alignment": analysis["api_alignment"],
         "metrics": analysis["metrics"],

@@ -135,6 +135,7 @@ class AttemptSummary(BaseModel):
     scorable: bool
     mastery_updated: bool
     scoring_engine: Optional[str]
+    audio_processing: Dict[str, Any] = Field(default_factory=dict)
     created_at: str
 
 

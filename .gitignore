@@ -28,8 +28,10 @@ uploads/*
 *.m4a
 *.opus
 *_converted.wav
-*_cleanvoice.wav
-*_reduced.wav
+*_audio_cleaning/
+source_48k_mono.wav
+cleaned_48k_mono.wav
+cleaned_16k_mono.wav
 # Committed test fixtures are the ONLY audio that is tracked.
 !tests/fixtures/
 !tests/fixtures/**

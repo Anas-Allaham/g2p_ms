@@ -1,6 +1,32 @@
 """Atomic recording writes + subject isolation/cascade + idempotency ledger."""
 
+import json
+
 import pytest
+
+
+def test_attempt_persists_json_safe_audio_processing_metadata(temp_db):
+    subject = temp_db.get_or_create_subject("audio-metadata")
+    temp_db.record_attempt(
+        user_id=subject["id"],
+        text="school",
+        reference_ipa="skuːl",
+        predicted_ipa="skuːl",
+        phoneme_error_rate=0.0,
+        weighted_error=0.0,
+        audio_processing_status="completed",
+        audio_quality_metadata={
+            "duration_seconds": 1.2,
+            "speech_seconds": 0.9,
+            "scoring_allowed": True,
+            "rejection_reasons": [],
+        },
+    )
+    row = temp_db.get_connection().execute(
+        "SELECT audio_processing_status, audio_quality_metadata FROM attempts"
+    ).fetchone()
+    assert row["audio_processing_status"] == "completed"
+    assert json.loads(row["audio_quality_metadata"])["speech_seconds"] == 0.9
 
 
 def test_atomic_recording_rolls_back_on_failure(temp_db, monkeypatch):

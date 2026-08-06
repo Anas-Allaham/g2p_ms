@@ -9,24 +9,31 @@ python-dotenv
 # --- Acoustic model + audio ---
 transformers
 torch
+torchaudio
 librosa
 soundfile
-imageio-ffmpeg
-numpy
-noisereduce
+# DeepFilterNet 0.5.6 requires NumPy <2.
+numpy==1.26.4
 scipy
+# DeepFilterLib publishes prebuilt Windows/Linux wheels through CPython 3.11.
+# Use Python 3.11 (see .python-version) to avoid requiring a local Rust toolchain.
+deepfilternet==0.5.6
+silero-vad==6.2.1
+cleanvoice-sdk==2.0.5       # optional external fallback; requires CLEANVOICE_API_KEY
 
 # --- Scoring (PanPhon is REQUIRED for trusted scoring; without it the service
 #     runs in the untrusted fallback and never updates mastery) ---
 panphon
 
-# --- Optional preprocessing / generation ---
-cleanvoice-sdk>=2.0.5,<3   # optional server-side enhancement (needs a key)
+# --- Optional generation ---
 openai                     # optional LLM exercise-generation fallback
 
-# --- Preferred reference G2P path ---
+# --- Reference G2P path ---
 spacy                      # POS-aware heteronym resolution; also install en_core_web_sm
-nemo_toolkit[tts]          # NeMo IpaG2p fallback for non-heteronym words
+# NeMo is intentionally NOT in the base install: nemo_toolkit[tts] pulls many
+# multilingual TTS build dependencies (including pyopenjtalk). The service has
+# a context-aware dictionary fallback. Install requirements-nemo.txt only when
+# the optional NeMo IpaG2p backend is genuinely needed.
 
 # --- Tests (the CI suite mocks the acoustic layer, so torch is not required
 #     to run the mocked tests) ---

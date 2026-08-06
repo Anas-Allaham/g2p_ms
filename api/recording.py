@@ -85,6 +85,13 @@ def persist_recording(
         "g2p_mode": reference.g2p_mode,
         "reference_g2p_trusted": reference.reference_g2p_trusted,
         "reference_g2p_reason": analysis["reference_reason"],
+        "audio_processing_status": analysis["recording"]
+        .get("audio_processing", {})
+        .get("processing_status", "disabled"),
+        "audio_quality_metadata": analysis["recording"].get(
+            "audio_processing", {}
+        ),
+        "audio_processing_error": None,
     }
     attempt_id = db.record_recording_atomic(
         user_id=user_id,

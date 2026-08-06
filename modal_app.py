@@ -45,16 +45,24 @@ IMAGE_IGNORES = [
 ]
 
 runtime_image = (
-    modal.Image.debian_slim(python_version="3.13")
-    .apt_install("ffmpeg")
-    .pip_install("torch==2.11.0", index_url="https://download.pytorch.org/whl/cpu")
+    # DeepFilterLib 0.5.6 provides binary wheels through CPython 3.11. Using
+    # 3.11 avoids compiling its Rust extension during image creation.
+    modal.Image.debian_slim(python_version="3.11")
+    # DeepFilterNet's startup logger shells out to git for build metadata.
+    .apt_install("ffmpeg", "git")
+    .pip_install(
+        "torch==2.11.0",
+        "torchaudio==2.11.0",
+        index_url="https://download.pytorch.org/whl/cpu",
+    )
     .pip_install_from_requirements(str(PROJECT_DIR / "requirements-deploy.txt"))
     .env(
         {
             "PRONUNCIATION_DB_PATH": "/data/pronunciation_ai.db",
             "PRONUNCIATION_UPLOAD_DIR": "/tmp/pronunciation_uploads",
-            "CLEANVOICE_ENABLED": "0",
-            "CLEANVOICE_STRICT": "0",
+            "AUDIO_CLEANING_ENABLED": "1",
+            "AUDIO_CLEANING_USE_GPU": "0",
+            "AUDIO_CLEANING_KEEP_INTERMEDIATE_FILES": "0",
             "RETAIN_AUDIO": "0",
             "PYTHONUNBUFFERED": "1",
         }

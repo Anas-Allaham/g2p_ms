@@ -40,6 +40,23 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        return default
+
+
+def _optional_float(name: str) -> float | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True)
 class Settings:
     # Auth. Every /api/v1 route requires Bearer <service_api_key>. If unset the
@@ -62,6 +79,41 @@ class Settings:
     # Recordings are private + temporary. Retention is never enabled for a
     # shared deployment; exposed only for local debugging.
     retain_audio: bool = field(default_factory=lambda: _flag("RETAIN_AUDIO", False))
+
+    # Offline exercise-audio cleaning. Models remain lazy even when enabled,
+    # so health checks, migrations/bootstrap, and unrelated requests stay light.
+    audio_cleaning_enabled: bool = field(
+        default_factory=lambda: _flag("AUDIO_CLEANING_ENABLED", False)
+    )
+    audio_cleaning_use_gpu: bool = field(
+        default_factory=lambda: _flag("AUDIO_CLEANING_USE_GPU", False)
+    )
+    audio_cleaning_min_duration_seconds: float = field(
+        default_factory=lambda: _float("AUDIO_CLEANING_MIN_DURATION_SECONDS", 0.5)
+    )
+    audio_cleaning_min_speech_seconds: float = field(
+        default_factory=lambda: _float("AUDIO_CLEANING_MIN_SPEECH_SECONDS", 0.3)
+    )
+    audio_cleaning_max_clipping_ratio: float = field(
+        default_factory=lambda: _float("AUDIO_CLEANING_MAX_CLIPPING_RATIO", 0.01)
+    )
+    audio_cleaning_min_speech_ratio: float | None = field(
+        default_factory=lambda: _optional_float("AUDIO_CLEANING_MIN_SPEECH_RATIO")
+    )
+    audio_cleaning_keep_intermediate_files: bool = field(
+        default_factory=lambda: _flag("AUDIO_CLEANING_KEEP_INTERMEDIATE_FILES", False)
+    )
+    audio_cleaning_timeout_seconds: float = field(
+        default_factory=lambda: _float("AUDIO_CLEANING_TIMEOUT_SECONDS", 120.0)
+    )
+    audio_cleaning_output_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get(
+                "AUDIO_CLEANING_OUTPUT_DIR",
+                str(Path(__file__).resolve().parent.parent / "uploads"),
+            )
+        )
+    )
 
     @property
     def auth_configured(self) -> bool:

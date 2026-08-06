@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS attempts (
     g2p_mode TEXT,
     reference_g2p_trusted INTEGER NOT NULL DEFAULT 0,
     reference_g2p_reason TEXT,
+    audio_processing_status TEXT NOT NULL DEFAULT 'disabled',
+    audio_quality_metadata TEXT NOT NULL DEFAULT '{}',
+    audio_processing_error TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -167,7 +170,24 @@ def get_connection() -> sqlite3.Connection:
 def init_db(conn: Optional[sqlite3.Connection] = None) -> None:
     conn = conn or get_connection()
     conn.executescript(SCHEMA)
+    _ensure_attempt_audio_columns(conn)
     conn.commit()
+
+
+def _ensure_attempt_audio_columns(conn: sqlite3.Connection) -> None:
+    """Additive schema upgrade for databases created before audio cleaning."""
+    existing = {
+        str(row["name"] if isinstance(row, sqlite3.Row) else row[1])
+        for row in conn.execute("PRAGMA table_info(attempts)").fetchall()
+    }
+    additions = {
+        "audio_processing_status": "TEXT NOT NULL DEFAULT 'disabled'",
+        "audio_quality_metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "audio_processing_error": "TEXT",
+    }
+    for name, definition in additions.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE attempts ADD COLUMN {name} {definition}")
 
 
 def checkpoint(conn: Optional[sqlite3.Connection] = None) -> None:
@@ -259,6 +279,9 @@ def _insert_attempt(
     g2p_mode: Optional[str] = None,
     reference_g2p_trusted: bool = False,
     reference_g2p_reason: Optional[str] = None,
+    audio_processing_status: str = "disabled",
+    audio_quality_metadata: Optional[Dict[str, Any]] = None,
+    audio_processing_error: Optional[str] = None,
 ) -> int:
     """Insert one attempt row WITHOUT committing (transaction-friendly).
     ``user_id`` is the internal subjects.id surrogate."""
@@ -268,8 +291,9 @@ def _insert_attempt(
             phoneme_error_rate, weighted_error, raw_weighted_per,
             quality_weight, scorable, rejected_reason,
             scoring_engine, scoring_trusted, mastery_updated, insertion_count,
-            reference_unit_count, g2p_mode, reference_g2p_trusted, reference_g2p_reason)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            reference_unit_count, g2p_mode, reference_g2p_trusted, reference_g2p_reason,
+            audio_processing_status, audio_quality_metadata, audio_processing_error)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             user_id, exercise_id, text, reference_ipa, predicted_ipa,
             phoneme_error_rate, weighted_error, raw_weighted_per,
@@ -277,6 +301,9 @@ def _insert_attempt(
             scoring_engine, 1 if scoring_trusted else 0,
             1 if mastery_updated else 0, insertion_count, reference_unit_count,
             g2p_mode, 1 if reference_g2p_trusted else 0, reference_g2p_reason,
+            str(audio_processing_status),
+            json.dumps(audio_quality_metadata or {}, separators=(",", ":"), sort_keys=True),
+            audio_processing_error,
         ),
     )
     return cur.lastrowid

@@ -1,0 +1,7 @@
+# Optional, heavy reference-G2P backend.
+#
+# The FastAPI service and audio-cleaning endpoint do not require this file.
+# On Windows, nemo_toolkit[tts] may compile pyopenjtalk and other multilingual
+# TTS dependencies from source, so installation can take a long time.
+-r requirements.txt
+nemo_toolkit[tts]

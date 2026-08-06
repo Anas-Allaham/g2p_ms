@@ -12,7 +12,7 @@ It was extracted from the Flask application **without importing it**. The
 authoritative AI modules were ported (`scoring.py`,
 `mastery.py`, `assessment.py`, `tokenization.py`,
 `phoneme_vectors_professional.py`, `audio_quality.py`, `g2p_service.py`,
-`content.py`, `services.py`, `cleanvoice_service.py`, plus the G2P pipeline and
+`content.py`, `services.py`, `audio_cleaning.py`, plus the G2P pipeline and
 model config). IPA remains the canonical internal phoneme representation.
 Stress-free ARPAbet is an HTTP boundary format used only in responses from the
 service and in ARPAbet-keyed API inputs.
@@ -170,14 +170,14 @@ of it while leaving the shared exercise bank intact.
   → 503 (fail closed). No end-user auth is this service's concern.
 - **No PII**: only opaque UUIDs are stored. No names, emails, or free-form
   identity fields exist in the schema.
-- **Audio is temporary**: the original upload, converted WAV, Cleanvoice output,
-  and reduced WAV are deleted in an outer `finally` on every success and failure.
-  Processed audio is never returned in a response and never logged. There is no
-  uploads route.
+- **Audio is temporary by default**: the immutable upload and isolated
+  FFmpeg/DeepFilterNet outputs are deleted in an outer `finally` on every success
+  and failure. The dedicated authenticated cleaning endpoint can stream a cleaned
+  WAV, but there is no general uploads route and no storage path is exposed.
 - **Streamed uploads**: recordings stream to a spooled temp file with a 20 MB
   cap, never fully buffered in memory.
-- **No leaking internals**: the catch-all handler returns a generic message;
-  Cleanvoice SDK errors (which can contain signed URLs) are wrapped.
+- **No leaking internals**: the catch-all handler and audio pipeline return
+  stable user-safe errors; technical exceptions and storage paths stay server-side.
 - **CORS**: off by default (server-to-server). Opt in via `CORS_ALLOW_ORIGINS`.
 
 ## 7. Environment variables
@@ -191,7 +191,17 @@ of it while leaving the shared exercise bank intact.
 | `MAX_AUDIO_SECONDS` | `60` | Advertised duration cap |
 | `CORS_ALLOW_ORIGINS` | *(none)* | Comma-separated origins (opt-in) |
 | `RETAIN_AUDIO` | `0` | Debug only; keep audio (never in prod) |
-| `CLEANVOICE_API_KEY` / `CLEANVOICE_ENABLED` / `CLEANVOICE_STRICT` | off | Optional enhancement |
+| `AUDIO_CLEANING_ENABLED` | `0` | Enable FFmpeg/DeepFilterNet/Silero processing |
+| `AUDIO_CLEANING_USE_GPU` | `0` | Request CUDA, with automatic CPU fallback |
+| `AUDIO_CLEANING_MIN_DURATION_SECONDS` | `0.5` | Minimum recording duration |
+| `AUDIO_CLEANING_MIN_SPEECH_SECONDS` | `0.3` | Minimum Silero-detected speech |
+| `AUDIO_CLEANING_MAX_CLIPPING_RATIO` | `0.01` | Maximum clipped-sample ratio |
+| `AUDIO_CLEANING_MIN_SPEECH_RATIO` | *(unset)* | Optional ratio rejection gate |
+| `AUDIO_CLEANING_KEEP_INTERMEDIATE_FILES` | `0` | Local debugging retention |
+| `AUDIO_CLEANING_TIMEOUT_SECONDS` | `120` | Processing/FFmpeg timeout |
+| `CLEANVOICE_API_KEY` | *(unset)* | Optional external fallback credential |
+| `CLEANVOICE_FALLBACK_ENABLED` | key presence | Use Cleanvoice only after eligible local failure |
+| `CLEANVOICE_HTTP_TIMEOUT` | `120` | Cleanvoice SDK request/poll timeout |
 | `GEMINI_API_KEY` (or `LLM_API_KEY`, ...) | off | Optional LLM exercise generation |
 
 ## 8. Modal operation

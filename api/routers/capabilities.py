@@ -9,6 +9,9 @@ present accurate capability/limitation information to end users.
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+
 from fastapi import APIRouter, Depends, Request
 
 from ..config import API_VERSION, settings
@@ -21,11 +24,11 @@ router = APIRouter(prefix=f"/api/{API_VERSION}", tags=["capabilities"], dependen
 @router.get("/capabilities")
 def capabilities(request: Request):
     from src.core.persistence import db
+    from src.core.audio.audio_cleaning import _select_device, find_ffmpeg
     from src.core.audio.cleanvoice_service import (
-        cleanvoice_configured,
-        cleanvoice_enabled,
+        cleanvoice_fallback_configured,
+        cleanvoice_fallback_enabled,
         cleanvoice_sdk_available,
-        cleanvoice_strict,
     )
     from src.core.g2p.content import llm_available
     from src.core.g2p.g2p_service import (
@@ -85,11 +88,23 @@ def capabilities(request: Request):
             "llm_generation_available": llm_available(),
         },
         "preprocessing": {
-            "cleanvoice_enabled": cleanvoice_enabled(),
-            "cleanvoice_configured": cleanvoice_configured(),
-            "cleanvoice_sdk_available": cleanvoice_sdk_available(),
-            "cleanvoice_strict": cleanvoice_strict(),
+            "audio_cleaning_enabled": settings.audio_cleaning_enabled,
+            "pipeline": "ffmpeg_deepfilternet_silero_vad",
+            "deepfilternet_installed": importlib.util.find_spec("df") is not None,
+            "silero_vad_installed": importlib.util.find_spec("silero_vad") is not None,
+            "cleanvoice_fallback_enabled": cleanvoice_fallback_enabled(),
+            "cleanvoice_fallback_configured": cleanvoice_fallback_configured(),
+            "cleanvoice_sdk_installed": cleanvoice_sdk_available(),
+            "ffmpeg_available": _ffmpeg_available(find_ffmpeg),
+            "requested_gpu": settings.audio_cleaning_use_gpu,
+            "selected_device": _select_device(settings.audio_cleaning_use_gpu),
+            "models_loaded_lazily": True,
+            "python_version": ".".join(map(str, sys.version_info[:3])),
+            "prebuilt_deepfilterlib_wheel_expected": (
+                (3, 8) <= sys.version_info[:2] <= (3, 11)
+            ),
             "audio_retention_enabled": settings.retain_audio,
+            "keep_intermediate_files": settings.audio_cleaning_keep_intermediate_files,
         },
         "limits": {
             "max_audio_bytes": settings.max_audio_bytes,
@@ -108,3 +123,11 @@ def capabilities(request: Request):
         },
     }
     return success(to_public_arpabet(data), request)
+
+
+def _ffmpeg_available(find_command) -> bool:
+    try:
+        find_command()
+        return True
+    except Exception:
+        return False
