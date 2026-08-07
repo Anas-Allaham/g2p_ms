@@ -4,7 +4,10 @@
 fastapi==0.121.1
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
-transformers==5.7.0
+# nemo_toolkit[tts] 2.7.2 hard-caps transformers at ~=4.57.0. The local acoustic
+# model is a plain Wav2Vec2ForCTC (config's transformers_version: 5.0.0 is just
+# save-time metadata, not a load requirement) and loads fine on 4.57.x.
+transformers==4.57.1
 librosa==0.11.0
 soundfile==0.13.1
 numpy==1.26.4
@@ -15,3 +18,4 @@ cleanvoice-sdk==2.0.5
 panphon==0.22.2
 python-dotenv
 openai==2.45.0
+nemo_toolkit[tts]==2.7.2

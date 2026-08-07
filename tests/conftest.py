@@ -20,10 +20,17 @@ if str(ROOT) not in sys.path:
 # Must be set before api.config imports settings.
 os.environ.setdefault("SERVICE_API_KEY", "test-service-key")
 os.environ.setdefault("RETAIN_AUDIO", "0")
+# The deterministic suite directly exercises the lightweight dictionary
+# backend. Normal local and deployed service execution requires NeMo.
+os.environ["G2P_REQUIRE_NEMO"] = "0"
 # Integration/model tests opt in explicitly. A developer's local .env may
 # enable the real cleaning pipeline, but the deterministic suite must not load
 # FFmpeg or download DeepFilterNet/Silero models.
 os.environ["AUDIO_CLEANING_ENABLED"] = "0"
+# Likewise the predictive ByT5 OOV fallback: the deterministic suite must not
+# download or load transformer weights. Tests that exercise the predicted-word
+# path inject a fake predictor instead.
+os.environ["OOV_G2P_ENABLED"] = "0"
 
 import pytest
 

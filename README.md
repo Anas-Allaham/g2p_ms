@@ -43,10 +43,23 @@ data model, security/privacy, Modal operation, and scaling notes.
 
 ## Quick start (local)
 
+The existing Windows Conda environment is the supported local runtime:
+
+```powershell
+conda activate nemo_g2p
+python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8002
+```
+
+Confirm that the running process selected NeMo at
+`GET http://127.0.0.1:8002/health/ready`; `checks.g2p_mode` must be
+`context_aware_nemo_ipa_g2p`.
+
+To build another environment from scratch:
+
 ```bash
 cd pronunciation_ai_service
 python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-nemo.txt
 python -m spacy download en_core_web_sm
 
 cp .env.example .env
@@ -63,14 +76,10 @@ On Windows, use `py -3.11 -m venv .venv` and
 publishes ready-made Windows/Linux wheels through CPython 3.11; newer Python
 versions otherwise require a Rust/Cargo build toolchain.
 
-NeMo is optional and intentionally excluded from the base install because its
-`[tts]` extra pulls large multilingual TTS build dependencies such as
-`pyopenjtalk`. Without NeMo the service uses its context-aware dictionary G2P
-fallback. Install the heavy backend only when needed:
-
-```powershell
-pip install -r requirements-nemo.txt
-```
+NeMo is required for normal local and deployed execution. Startup fails if it
+cannot be imported, preventing an unnoticed change in reference-G2P behavior.
+`G2P_REQUIRE_NEMO=0` explicitly enables the dictionary-only fallback for the
+deterministic test suite or deliberate lightweight development.
 
 - Interactive docs: <http://127.0.0.1:8000/docs>
 - OpenAPI: <http://127.0.0.1:8000/openapi.json>

@@ -47,9 +47,11 @@ audio -> Wav2Vec2 CTC                                  -> predicted IPA
                     ARPAbet -> Django / frontend
 ```
 
-NeMo and spaCy POS tagging are the preferred reference path. If either optional
-runtime component cannot load, `g2p_service.py` retains the context-aware IPA
-dictionary fallback and reports that fallback in `g2p_mode`.
+NeMo is required for normal local and deployed execution. If it cannot load,
+startup fails rather than silently changing reference-G2P behavior. The
+context-aware IPA dictionary fallback remains available only through the
+explicit `G2P_REQUIRE_NEMO=0` test/development opt-out and reports that fallback
+in `g2p_mode`.
 
 ```
 ┌──────────────┐   Bearer service key    ┌─────────────────────────────┐

@@ -30,10 +30,10 @@ openai                     # optional LLM exercise-generation fallback
 
 # --- Reference G2P path ---
 spacy                      # POS-aware heteronym resolution; also install en_core_web_sm
-# NeMo is intentionally NOT in the base install: nemo_toolkit[tts] pulls many
-# multilingual TTS build dependencies (including pyopenjtalk). The service has
-# a context-aware dictionary fallback. Install requirements-nemo.txt only when
-# the optional NeMo IpaG2p backend is genuinely needed.
+# NeMo is required at runtime and is installed separately through
+# requirements-nemo.txt. This split keeps lightweight test installs possible;
+# the service fails startup unless NeMo is present or G2P_REQUIRE_NEMO=0 was
+# explicitly selected.
 
 # --- Tests (the CI suite mocks the acoustic layer, so torch is not required
 #     to run the mocked tests) ---

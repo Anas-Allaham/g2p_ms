@@ -57,6 +57,7 @@ class G2PData(BaseModel):
     unresolved_heteronyms: List[str]
     unsupported_heteronyms: List[str]
     oov_words: List[str]
+    predicted_words: List[str] = []
 
 
 # ---- subjects --------------------------------------------------------------

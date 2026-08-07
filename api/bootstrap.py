@@ -95,12 +95,11 @@ def bootstrap() -> None:
     from src.core.persistence import db
 
     db.init_db()
-    try:
-        from src.core.g2p.g2p_service import load_g2p_engine
+    from src.core.g2p.g2p_service import load_g2p_engine
 
-        load_g2p_engine()
-    except Exception as exc:  # pragma: no cover
-        print("G2P engine warm-up failed:", repr(exc))
+    # NeMo is required in normal local and deployed execution.  Do not hide a
+    # broken/missing backend and then accept traffic with a different G2P mode.
+    load_g2p_engine()
     ensure_seeded()
     validate_inventory()
     db.checkpoint()
