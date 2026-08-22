@@ -61,6 +61,10 @@ def capabilities(request: Request):
             "weight_present": acoustic.model_weight_present(),
             "loaded": acoustic.model_loaded(),
             "architecture": "wav2vec2-ctc-phoneme",
+            "id": acoustic.MODEL_ID,
+            "revision": acoustic.MODEL_REVISION,
+            "output_alphabet": "arpabet",
+            "internal_alphabet": "ipa",
         },
         "scoring": {
             "engine": scoring_engine(),

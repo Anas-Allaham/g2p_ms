@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS exercise_bank (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS service_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS sentence_phonemes (
     sentence_id INTEGER NOT NULL REFERENCES exercise_bank(id) ON DELETE CASCADE,
     phoneme TEXT NOT NULL,
@@ -501,6 +507,29 @@ def _upsert_phoneme_state(
 # -----------------------------------------------------------------------------
 # Exercise bank (shared content; not per subject)
 # -----------------------------------------------------------------------------
+def get_service_metadata(key: str, conn: Optional[sqlite3.Connection] = None) -> Optional[str]:
+    conn = conn or get_connection()
+    row = conn.execute("SELECT value FROM service_metadata WHERE key = ?", (key,)).fetchone()
+    return str(row["value"]) if row is not None else None
+
+
+def set_service_metadata(
+    key: str,
+    value: str,
+    conn: Optional[sqlite3.Connection] = None,
+) -> None:
+    conn = conn or get_connection()
+    conn.execute(
+        """INSERT INTO service_metadata (key, value, updated_at)
+           VALUES (?, ?, datetime('now'))
+           ON CONFLICT(key) DO UPDATE SET
+               value = excluded.value,
+               updated_at = excluded.updated_at""",
+        (key, value),
+    )
+    conn.commit()
+
+
 def insert_sentence(
     text: str,
     reference_ipa: str,

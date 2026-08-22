@@ -5,7 +5,7 @@ This module owns EVERY authoritative phoneme decision the rest of the app
 relies on, so there is exactly one implementation of each:
 
     * canonicalize_phoneme()            - IPA symbol normalization + aliasing
-    * the canonical scoring inventory   - derived from the model vocab.json
+    * the canonical scoring inventory   - derived from the acoustic label map
     * phoneme_distance()                - articulatory distance in [0, 1]
     * is_vowel() / is_consonant()       - major-class classification
     * alignment_substitution_cost()     - cost used ONLY by DP alignment
@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
 from src.core.paths import PROJECT_ROOT
+from src.core.g2p.phoneme_alphabet import ARPABET_TO_IPA
 
 MODEL_VOCAB_PATH = PROJECT_ROOT / "model" / "my_wav2vec2_phoneme_model" / "vocab.json"
 
@@ -52,7 +53,7 @@ PANPHON_FEATURE_NAMES: Tuple[str, ...] = (
 # -----------------------------------------------------------------------------
 # Aliases: symbol normalization only, NOT feature definitions.
 #
-# The model vocab distinguishes /ɪ/ from /i/ and /ʊ/ from /u/ but does not
+# The acoustic labels distinguish /ɪ/ from /i/ and /ʊ/ from /u/ but do not
 # contain the length symbol /ː/. So expected long vowels from the G2P
 # (iː, uː, ɑː, ɔː) must collapse onto units the model can actually emit,
 # otherwise they would be phonemes the acoustic model can never produce.
@@ -105,13 +106,22 @@ _NON_PHONEME_TOKENS = {"|", "ˌ", "ˈ", "[PAD]", "[UNK]", "<s>", "</s>", "", " "
 
 @lru_cache(maxsize=1)
 def _model_base_phonemes() -> Tuple[str, ...]:
-    """Base phoneme inventory the acoustic model can emit, read from its
-    vocab.json. Falls back to the known set if the file is missing so the
-    module still imports in a stripped-down checkout."""
+    """Internal IPA inventory represented by the acoustic label map.
+
+    Older checkpoints stored IPA labels directly.  The current checkpoint
+    stores token-level ARPAbet, so those labels are converted before they enter
+    PanPhon/scoring.  Schwa remains a supported reference phoneme even though
+    the stress-free 39-phone model folds it into ``AH``.
+    """
     try:
         with MODEL_VOCAB_PATH.open("r", encoding="utf-8") as f:
             vocab = json.load(f)
-        tokens = [t for t in vocab.keys() if t not in _NON_PHONEME_TOKENS]
+        tokens = []
+        for token in vocab:
+            if token in _NON_PHONEME_TOKENS:
+                continue
+            tokens.append(ARPABET_TO_IPA.get(token, token))
+        tokens.append("ə")
     except Exception:
         tokens = [
             "a", "b", "d", "e", "f", "h", "i", "j", "k", "l", "m", "n", "o",
@@ -123,8 +133,7 @@ def _model_base_phonemes() -> Tuple[str, ...]:
 
 @lru_cache(maxsize=1)
 def canonical_inventory() -> frozenset:
-    """The canonical scoring inventory = every model-emittable base phoneme
-    plus the application-level composite phonemes (affricates, diphthongs)."""
+    """Every acoustically represented/reference IPA unit used by scoring."""
     base = set(_model_base_phonemes())
     return frozenset(base | set(COMPOSITE_COMPONENTS.keys()))
 

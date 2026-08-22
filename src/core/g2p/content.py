@@ -61,7 +61,7 @@ LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "800"))
 # Sentences may run up to MAX_WORD_COUNT words so a generated exercise can
 # pack in many repetitions of the target sounds; TARGET_WORD_COUNT is just
 # the length the retrieval scorer gently prefers.
-TARGET_WORD_COUNT = int(os.environ.get("EXERCISE_TARGET_WORDS", "12"))
+TARGET_WORD_COUNT = int(os.environ.get("EXERCISE_TARGET_WORDS", "16"))
 MAX_WORD_COUNT = int(os.environ.get("EXERCISE_MAX_WORDS", "30"))
 COVERAGE_MIN_FRACTION = 0.6
 OVERMASTERED_MAX_FRACTION = 0.5
@@ -90,19 +90,23 @@ LEVEL_PROXY_MAX = 26.0
 
 # Target difficulty per assessed level (provisional).
 LEVEL_DIFFICULTY = {
-    "unknown": 0.4,
-    "beginner": 0.25,
-    "intermediate": 0.55,
-    "advanced": 0.8,
+    "unknown": 0.55,
+    "beginner": 0.35,
+    "intermediate": 0.65,
+    "advanced": 0.9,
 }
 
 _client = None
 
 
 # Word-count bands per exercise type (drives real selection, not just a label).
-SHORT_PHRASE_MAX_WORDS = 5
-TARGETED_SENTENCE_MAX_WORDS = 14
-MAINTENANCE_MIN_WORDS = 10
+# Minimal-pair drills stay intentionally short, while sentence work progresses
+# from complete phrases into multi-clause connected speech.
+SHORT_PHRASE_MIN_WORDS = 6
+SHORT_PHRASE_MAX_WORDS = 10
+TARGETED_SENTENCE_MIN_WORDS = 10
+TARGETED_SENTENCE_MAX_WORDS = 20
+MAINTENANCE_MIN_WORDS = 16
 
 # Minimal pairs for the most common English confusions. Keyed as a frozenset so
 # lookup is order-independent (θ/s == s/θ). Each entry lists (word_a, word_b)
@@ -460,10 +464,17 @@ def llm_available() -> bool:
 
 
 _LEVEL_GUIDANCE = {
-    "beginner": "Use short, common, everyday words and simple grammar.",
-    "intermediate": "Use moderately varied vocabulary and natural sentence structure.",
-    "advanced": "You may use richer vocabulary and more complex structure.",
-    "unknown": "Use clear, natural, everyday language of moderate difficulty.",
+    "beginner": "Use common everyday words, but form one complete sentence with a clear connector.",
+    "intermediate": "Use varied vocabulary and a natural compound or subordinate clause.",
+    "advanced": "Use precise vocabulary, connected speech, and at least two naturally linked clauses.",
+    "unknown": "Use clear, varied language with a natural compound or subordinate clause.",
+}
+
+_LEVEL_WORD_COUNT_RANGES = {
+    "beginner": (8, 12),
+    "intermediate": (12, 18),
+    "advanced": (16, 24),
+    "unknown": (12, 18),
 }
 
 
@@ -472,6 +483,7 @@ def generate_candidate_text(
     avoid_phonemes: Iterable[str],
     level: Optional[str] = None,
     confusion_hint: Optional[str] = None,
+    word_count_range: Optional[tuple[int, int]] = None,
 ) -> Optional[str]:
     """One LLM-proposed sentence. Returns None on any failure (no key, no
     package, API error) so the caller falls back to the retrieval bank --
@@ -488,13 +500,18 @@ def generate_candidate_text(
     avoid_list = ", ".join(sorted(avoid_phonemes)) or "none"
     level = (level or "unknown").lower()
     level_line = _LEVEL_GUIDANCE.get(level, _LEVEL_GUIDANCE["unknown"])
+    min_words, max_words = word_count_range or _LEVEL_WORD_COUNT_RANGES.get(
+        level, _LEVEL_WORD_COUNT_RANGES["unknown"]
+    )
+    min_words = max(1, int(min_words))
+    max_words = min(MAX_WORD_COUNT, max(min_words, int(max_words)))
     confusion_line = (
         f"The learner tends to confuse {confusion_hint}; include contrasting words that "
         "make that distinction clear.\n"
         if confusion_hint else ""
     )
     prompt = (
-        f"Write ONE natural English sentence of at most {MAX_WORD_COUNT} words for a "
+        f"Write ONE natural English sentence between {min_words} and {max_words} words for a "
         "pronunciation-practice app.\n"
         f"Learner level: {level}. {level_line}\n"
         f"Focus tightly on these {len(target_phonemes)} IPA target sound(s): "
@@ -558,6 +575,8 @@ def verify_generated_exercise(
     target_phonemes: List[str],
     overmastered_phonemes: Iterable[str],
     min_reps: int = MIN_TARGET_REPETITIONS,
+    min_word_count: int = 1,
+    max_word_count: int = MAX_WORD_COUNT,
 ) -> tuple[bool, List[str]]:
     """Check a generated (already-tagged) exercise against acceptance rules.
     Returns (ok, reasons_for_rejection). Rules: valid/supported G2P output,
@@ -570,7 +589,9 @@ def verify_generated_exercise(
         report = validate_g2p_inventory(tagged["phoneme_counts"].keys())
         if not report["ok"]:
             reasons.append(f"unsupported_phonemes:{report['unsupported']}")
-    if tagged.get("word_count", 0) > MAX_WORD_COUNT:
+    if tagged.get("word_count", 0) < min_word_count:
+        reasons.append("too_short")
+    if tagged.get("word_count", 0) > max_word_count:
         reasons.append("too_long")
     if not covers_targets(tagged.get("phoneme_counts", {}), target_phonemes):
         reasons.append("insufficient_target_coverage")
@@ -588,6 +609,7 @@ def generate_and_verify_exercise(
     ipa_to_tokens: Callable[[str], List[str]],
     level: Optional[str] = None,
     confusion_hint: Optional[str] = None,
+    word_count_range: Optional[tuple[int, int]] = None,
     max_attempts: int = GENERATION_MAX_ATTEMPTS,
 ) -> Optional[Dict]:
     """Rejection-sampling loop: ask the LLM for a candidate, verify it with the
@@ -602,12 +624,23 @@ def generate_and_verify_exercise(
     overmastered_phonemes = set(overmastered_phonemes)
     for _ in range(max_attempts):
         candidate_text = generate_candidate_text(
-            target_phonemes, overmastered_phonemes, level=level, confusion_hint=confusion_hint
+            target_phonemes,
+            overmastered_phonemes,
+            level=level,
+            confusion_hint=confusion_hint,
+            word_count_range=word_count_range,
         )
         if not candidate_text:
             return None  # no client available or the call failed -- don't keep retrying
         tagged = tag_sentence(candidate_text, g2p_convert, ipa_to_tokens)
-        ok, _reasons = verify_generated_exercise(tagged, target_phonemes, overmastered_phonemes)
+        min_words, max_words = word_count_range or (1, MAX_WORD_COUNT)
+        ok, _reasons = verify_generated_exercise(
+            tagged,
+            target_phonemes,
+            overmastered_phonemes,
+            min_word_count=min_words,
+            max_word_count=max_words,
+        )
         if ok:
             tagged["source"] = "llm_generated"
             return tagged

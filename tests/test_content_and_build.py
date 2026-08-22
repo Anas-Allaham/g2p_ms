@@ -75,6 +75,30 @@ def test_builder_locates_seed_file():
     assert all(isinstance(s, str) and s for s in sentences)
 
 
+def test_seed_bank_contains_complex_connected_speech_lessons():
+    sentences = _load_builder().load_seed_sentences()
+    word_counts = [len(sentence.split()) for sentence in sentences]
+    assert max(word_counts) >= content.MAINTENANCE_MIN_WORDS
+    assert sum(count >= content.MAINTENANCE_MIN_WORDS for count in word_counts) >= 30
+
+
+def test_seed_version_upgrade_runs_once(temp_db, monkeypatch):
+    from api import bootstrap
+
+    calls = []
+    monkeypatch.setattr(temp_db, "count_exercise_bank", lambda: 1)
+    monkeypatch.setattr(bootstrap, "seed_exercise_bank", lambda: calls.append(True) or 7)
+
+    bootstrap.ensure_seeded()
+    bootstrap.ensure_seeded()
+
+    assert calls == [True]
+    assert (
+        temp_db.get_service_metadata(bootstrap.EXERCISE_SEED_VERSION_KEY)
+        == bootstrap.EXERCISE_SEED_VERSION
+    )
+
+
 def test_exercise_tagging_rejects_untrusted_reference_g2p():
     from src.core.g2p.g2p_service import g2p_convert_with_metadata
     from src.core.g2p.tokenization import ipa_to_tokens

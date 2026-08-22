@@ -48,7 +48,7 @@ def test_real_model_transcribes_and_scores(tmp_path):
             c.headers.update({"Authorization": f"Bearer {os.environ['SERVICE_API_KEY']}"})
             r = c.post(
                 "/api/v1/pronunciation/analyses",
-                data={"text": "school"},
+                data={"text": "She sells seashells by the seashore."},
                 files={"audio": ("s.wav", FIXTURE_WAV.read_bytes(), "audio/wav")},
             )
             assert r.status_code == 200

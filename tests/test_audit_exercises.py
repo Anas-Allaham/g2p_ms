@@ -30,13 +30,44 @@ def test_low_mastery_falls_back_to_isolated_words():
 # ---- #6: exercise_type drives length band ----
 def test_word_count_band_selection():
     from src.core.exercises.services import _word_count_range_for
-    assert _word_count_range_for("short_phrase") == (1, content.SHORT_PHRASE_MAX_WORDS)
+    assert _word_count_range_for("short_phrase") == (
+        content.SHORT_PHRASE_MIN_WORDS,
+        content.SHORT_PHRASE_MAX_WORDS,
+    )
+    assert _word_count_range_for("targeted_sentence") == (
+        content.TARGETED_SENTENCE_MIN_WORDS,
+        content.TARGETED_SENTENCE_MAX_WORDS,
+    )
     assert _word_count_range_for("maintenance")[0] == content.MAINTENANCE_MIN_WORDS
 
     short = {"id": 1, "text": "a", "phoneme_counts": {"s": 2}, "word_count": 3, "level_proxy": 5}
-    long = {"id": 2, "text": "b", "phoneme_counts": {"s": 2}, "word_count": 18, "level_proxy": 20}
-    picked = content.pick_next_sentence([short, long], ["s"], word_count_range=(1, content.SHORT_PHRASE_MAX_WORDS))
-    assert picked["id"] == 1  # the short one, within band
+    complete_phrase = {
+        "id": 2, "text": "b", "phoneme_counts": {"s": 2}, "word_count": 8, "level_proxy": 10
+    }
+    picked = content.pick_next_sentence(
+        [short, complete_phrase],
+        ["s"],
+        word_count_range=(content.SHORT_PHRASE_MIN_WORDS, content.SHORT_PHRASE_MAX_WORDS),
+    )
+    assert picked["id"] == 2  # complete phrase within the richer short-phrase band
+
+
+def test_generated_exercise_rejects_text_below_complexity_band():
+    tagged = {
+        "phoneme_counts": {"s": 2},
+        "word_count": 5,
+        "reference_g2p_trusted": True,
+        "has_oov_words": False,
+    }
+    ok, reasons = content.verify_generated_exercise(
+        tagged,
+        ["s"],
+        set(),
+        min_word_count=content.SHORT_PHRASE_MIN_WORDS,
+        max_word_count=content.SHORT_PHRASE_MAX_WORDS,
+    )
+    assert ok is False
+    assert "too_short" in reasons
 
 
 # ---- #6: retrieval is confusion-aware (not only LLM) ----

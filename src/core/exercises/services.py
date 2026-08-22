@@ -80,9 +80,9 @@ def _confusion_hint_for(target: Optional[str], confusion_pairs: List[Dict[str, A
 def _word_count_range_for(exercise_type: str) -> Optional[tuple]:
     """Length band each functional exercise type draws from."""
     if exercise_type == "short_phrase":
-        return (1, content.SHORT_PHRASE_MAX_WORDS)
+        return (content.SHORT_PHRASE_MIN_WORDS, content.SHORT_PHRASE_MAX_WORDS)
     if exercise_type == "targeted_sentence":
-        return (1, content.TARGETED_SENTENCE_MAX_WORDS)
+        return (content.TARGETED_SENTENCE_MIN_WORDS, content.TARGETED_SENTENCE_MAX_WORDS)
     if exercise_type == "maintenance":
         return (content.MAINTENANCE_MIN_WORDS, content.MAX_WORD_COUNT)
     return None
@@ -133,6 +133,7 @@ def choose_exercise(
         if drill is not None:
             return {"source_mode": drill["source"], "exercise": None, "generated": drill}
 
+    word_count_range = _word_count_range_for(exercise_type)
     candidates = db.get_sentences_covering_any(targets)
     best = content.pick_next_sentence(
         candidates,
@@ -142,7 +143,7 @@ def choose_exercise(
         target_difficulty=target_difficulty,
         under_observed_phonemes=under_observed,
         confusion_phonemes=confusion_phonemes,
-        word_count_range=_word_count_range_for(exercise_type),
+        word_count_range=word_count_range,
     )
 
     required_overlap = (len(targets) + 1) // 2
@@ -154,6 +155,7 @@ def choose_exercise(
         generated = content.generate_and_verify_exercise(
             targets, overmastered, g2p_convert, ipa_to_tokens,
             level=overall_level, confusion_hint=confusion_hint,
+            word_count_range=word_count_range,
         )
         if generated is not None:
             source_mode = "generated"

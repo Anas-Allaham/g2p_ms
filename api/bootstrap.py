@@ -15,6 +15,8 @@ from typing import Any, Dict
 
 SERVICE_ROOT = Path(__file__).resolve().parent.parent
 SEED_PATH = SERVICE_ROOT / "data" / "seed_sentences.txt"
+EXERCISE_SEED_VERSION_KEY = "exercise_seed_version"
+EXERCISE_SEED_VERSION = "complex-lessons-v2"
 
 
 def validate_inventory() -> Dict[str, Any]:
@@ -83,11 +85,22 @@ def seed_exercise_bank() -> int:
 
 
 def ensure_seeded() -> None:
+    """Import the current corpus once per seed version.
+
+    Existing Modal Volumes keep their learner data and assignments. Bumping
+    ``EXERCISE_SEED_VERSION`` adds only new, verified lessons because sentence
+    text is unique and ``seed_exercise_bank`` skips duplicates.
+    """
     from src.core.persistence import db
 
-    if db.count_exercise_bank() == 0:
+    current_version = db.get_service_metadata(EXERCISE_SEED_VERSION_KEY)
+    if db.count_exercise_bank() == 0 or current_version != EXERCISE_SEED_VERSION:
         inserted = seed_exercise_bank()
-        print(f"Seeded exercise bank with {inserted} sentence(s); total {db.count_exercise_bank()}.")
+        db.set_service_metadata(EXERCISE_SEED_VERSION_KEY, EXERCISE_SEED_VERSION)
+        print(
+            f"Updated exercise bank to {EXERCISE_SEED_VERSION}: "
+            f"inserted {inserted} sentence(s); total {db.count_exercise_bank()}."
+        )
 
 
 def bootstrap() -> None:

@@ -13,7 +13,8 @@ Notes / constraints (see MICROSERVICE_REPORT.md):
     so this v1 runs single-writer: max_containers=1, one active input,
     600s request timeout. Move to PostgreSQL before scaling to many containers.
   * Secrets carry SERVICE_API_KEY and optional provider keys — never the .env.
-  * The 378 MB model weight ships in its own cached image layer.
+  * The pinned 378 MB acoustic checkpoint is downloaded into a cached image
+    layer at build time.
 """
 
 from __future__ import annotations
@@ -29,12 +30,29 @@ APP_DIR = "/root/pronunciation-ai-service"
 PROJECT_DIR = Path(__file__).resolve().parent
 MODEL_DIR = PROJECT_DIR / "model" / "my_wav2vec2_phoneme_model"
 MODEL_REMOTE_DIR = f"{APP_DIR}/model/my_wav2vec2_phoneme_model"
+ACOUSTIC_MODEL_ID = "waelhasan/wav2vec2-l2-arctic-phoneme-model"
+ACOUSTIC_MODEL_REVISION = "6aaebdaf68bfda0aaa4b9a03b0e7eb1531d58e30"
 
 # Predictive OOV G2P (ByT5). Weights are baked into a cached image layer at
 # build time so the running container never reaches the network. Keep this in
 # sync with src/core/g2p/oov_g2p.py DEFAULT_MODEL.
 HF_CACHE_DIR = "/opt/hf-cache"
 OOV_G2P_MODEL = "charsiu/g2p_multilingual_byT5_tiny_16_layers_100"
+
+
+def _bake_acoustic_model() -> None:
+    """Download the pinned config/weight into the runtime's local model path."""
+    import os as _os
+
+    _os.environ["HF_HOME"] = HF_CACHE_DIR
+    from huggingface_hub import snapshot_download
+
+    snapshot_download(
+        repo_id=ACOUSTIC_MODEL_ID,
+        revision=ACOUSTIC_MODEL_REVISION,
+        local_dir=MODEL_REMOTE_DIR,
+        allow_patterns=["config.json", "model.safetensors"],
+    )
 
 
 def _bake_oov_g2p_model() -> None:
@@ -55,8 +73,8 @@ def _bake_oov_g2p_model() -> None:
         ByT5Tokenizer()
 
 # Never upload local secrets, recordings, databases, caches, or test artifacts.
-# The model is copied in its own cached layer, so source-only changes don't
-# re-upload the weight.
+# Models are downloaded in their own cached layers, so source-only changes do
+# not download their weights again.
 IMAGE_IGNORES = [
     ".git", ".git/**",
     ".env", ".env.*", "!.env.example",
@@ -102,11 +120,23 @@ runtime_image = (
             "HF_HUB_DISABLE_XET": "1",
         }
     )
-    # Bake the ByT5 weights into their own cached layer (needs network at build
-    # time only), then pin the runtime offline so a request never fetches.
+    # Bake both model weights into cached layers (network at build time only),
+    # then pin the runtime offline so a request never fetches.
+    .run_function(_bake_acoustic_model)
     .run_function(_bake_oov_g2p_model)
     .env({"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
-    .add_local_dir(str(MODEL_DIR), remote_path=MODEL_REMOTE_DIR, copy=True)
+    # The checkpoint repository has no processor/tokenizer. Add the small
+    # versioned decoder label map and feature-extractor config from this repo.
+    .add_local_file(
+        str(MODEL_DIR / "vocab.json"),
+        remote_path=f"{MODEL_REMOTE_DIR}/vocab.json",
+        copy=True,
+    )
+    .add_local_file(
+        str(MODEL_DIR / "preprocessor_config.json"),
+        remote_path=f"{MODEL_REMOTE_DIR}/preprocessor_config.json",
+        copy=True,
+    )
     .add_local_dir(str(PROJECT_DIR), remote_path=APP_DIR, copy=True, ignore=IMAGE_IGNORES)
 )
 
@@ -121,7 +151,7 @@ data_volume = modal.Volume.from_name("pronunciation-ai-data", create_if_missing=
     cpu=1.0,
     memory=4096,
     timeout=600,
-    scaledown_window=60,
+    scaledown_window=600,
     max_containers=1,
 )
 @modal.concurrent(max_inputs=1)

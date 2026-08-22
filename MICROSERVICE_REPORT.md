@@ -13,9 +13,9 @@ authoritative AI modules were ported (`scoring.py`,
 `mastery.py`, `assessment.py`, `tokenization.py`,
 `phoneme_vectors_professional.py`, `audio_quality.py`, `g2p_service.py`,
 `content.py`, `services.py`, `audio_cleaning.py`, plus the G2P pipeline and
-model config). IPA remains the canonical internal phoneme representation.
-Stress-free ARPAbet is an HTTP boundary format used only in responses from the
-service and in ARPAbet-keyed API inputs.
+model config). IPA remains the canonical internal scoring representation. The
+acoustic checkpoint emits stress-free ARPAbet, which is converted immediately
+to IPA; ARPAbet is also the HTTP response/input boundary format.
 
 ## 2. Audit of the source application
 
@@ -34,7 +34,7 @@ service and in ARPAbet-keyed API inputs.
 
 ```text
 text  -> POS Tagger -> heteronym lexicon / NeMo IpaG2p -> reference IPA
-audio -> Wav2Vec2 CTC                                  -> predicted IPA
+audio -> Wav2Vec2 CTC -> predicted ARPAbet -> compact internal IPA
                               |
                               v
                   IPA tokenization, PanPhon scoring,
@@ -221,8 +221,8 @@ modal serve modal_app.py
 modal deploy modal_app.py
 ```
 
-- The 378 MB model weight ships in its own cached image layer (via
-  `add_local_dir(..., copy=True)`); source-only changes don't re-upload it.
+- The pinned 378 MB acoustic checkpoint is downloaded from Hugging Face into a
+  cached image layer at build time; source-only changes do not download it again.
 - The database lives on a Volume at `/data/pronunciation_ai.db`. After each
   stateful transaction the WAL is checkpointed and the Volume committed.
 - **Concurrency limit (required):** Modal Volumes are not intended for

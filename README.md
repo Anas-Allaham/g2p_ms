@@ -4,18 +4,21 @@ A self-contained FastAPI microservice wrapping the pronunciation-analysis engine
 (G2P → Wav2Vec2 → audio-quality gate → phoneme alignment → provisional scoring →
 Bayesian mastery → evidence-aware assessment → adaptive exercises).
 
-The phonetic engine remains IPA end to end: the POS-aware heteronym resolver
-and NeMo produce the reference IPA, Wav2Vec2 predicts IPA, and PanPhon,
-alignment, mastery, exercises, and persistence all operate on IPA. Only the
-public API boundary converts phoneme-bearing response fields to uppercase,
-stress-free **ARPAbet** (for example, `S K UW L | IH Z`) for Django/frontend
-clients. `|` marks word boundaries and `AX` represents schwa.
+IPA remains the canonical internal scoring format: the POS-aware heteronym
+resolver and NeMo produce reference IPA, while the pinned
+`waelhasan/wav2vec2-l2-arctic-phoneme-model` checkpoint predicts stress-free
+**ARPAbet**. Its exact 41-label CTC output is decoded and converted immediately
+to IPA before PanPhon, alignment, mastery, exercises, and persistence run. The
+public API converts phoneme-bearing response fields back to uppercase ARPAbet
+(for example, `S K UW L | IH Z`) for Django/frontend clients. `|` marks known
+word boundaries and `AX` represents schwa.
 
 The public boundary validates every emitted token against the declared
 stress-free ARPAbet inventory. Formatted reference IPA uses explicit `|` word
-boundaries, while raw CTC output treats whitespace as acoustic word boundaries;
-the adapter no longer guesses which format it received. Unsupported reference
-or API tokens fail explicitly, while CTC-only recovery is non-fatal and logged.
+boundaries. The acoustic model has no word-boundary label, so its decoded token
+sequence is stored as compact raw-CTC IPA rather than inventing boundaries.
+Unsupported reference or API tokens fail explicitly, while CTC-only recovery is
+non-fatal and logged.
 
 IPA→ARPAbet→IPA is intentionally canonicalizing rather than lossless. It may
 normalize vowel length, allophones, and dialect variants to the service's
@@ -23,7 +26,7 @@ American-English-oriented internal inventory.
 
 ```text
 text  -> POS Tagger -> heteronym lexicon / NeMo -> reference IPA
-audio -> Wav2Vec2                              -> predicted IPA
+audio -> Wav2Vec2 -> predicted ARPAbet -> compact internal IPA
                          IPA alignment + PanPhon + persistence
                                            |
                                            v
@@ -65,8 +68,8 @@ python -m spacy download en_core_web_sm
 cp .env.example .env
 #   set SERVICE_API_KEY to a long random secret
 
-# Supply the trained model weight (distributed separately, gitignored):
-#   model/my_wav2vec2_phoneme_model/model.safetensors
+# Download the pinned acoustic config/weight (the weight is gitignored):
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='waelhasan/wav2vec2-l2-arctic-phoneme-model', revision='6aaebdaf68bfda0aaa4b9a03b0e7eb1531d58e30', local_dir='model/my_wav2vec2_phoneme_model', allow_patterns=['config.json', 'model.safetensors'])"
 
 uvicorn api.main:app --reload
 ```
@@ -273,6 +276,12 @@ pagination, temporary-audio cleanup on every failure stage, FFmpeg failures,
 DeepFilterNet/Silero orchestration, Cleanvoice fallback eligibility and safe
 options, VAD metadata, JSON-safe scalar conversion, CPU fallback, idempotency,
 original preservation, and lazy model loading.
+
+The current acoustic checkpoint uses the standard stress-free 39-phone ARPAbet
+inventory, where `AH` covers both stressed /ʌ/ and unstressed schwa. The
+reference/API layer retains `AH` versus `AX`, but the acoustic model cannot
+independently observe that contrast. Scores involving this pair should therefore
+be treated as provisional until a stress-aware or explicit-`AX` model is trained.
 
 An optional real-model smoke test uses the bundled WAV fixture; it needs the
 model weight present and only mocks nothing.
