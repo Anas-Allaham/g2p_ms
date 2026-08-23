@@ -27,7 +27,8 @@ def convert(payload: G2PRequest, request: Request):
     text = payload.text.strip()
     resolution = resolve_supported_reference(text)
     internal_data = {
-        "text": text,
+        "text": resolution.text,
+        "original_text": text,
         "ipa": resolution.ipa,
         "guide": ipa_reading_guide(resolution.ipa),
         **resolution.to_dict(),

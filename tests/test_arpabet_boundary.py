@@ -39,6 +39,39 @@ def test_boundary_converts_sequences_guides_alignments_and_assessment():
     assert "reference_ipa" not in public and "predicted_ipa" not in public
 
 
+def test_model_equivalent_ax_ah_match_displays_ax_and_preserves_observation():
+    public = to_public_arpabet({
+        "alignment": [{
+            "expected": "ə",
+            "spoken": "ʌ",
+            "result": "correct",
+            "articulatory_distance": 0.0,
+            "alignment_cost": 0.0,
+        }],
+    })
+
+    assert public["alignment"][0] == {
+        "expected": "AX",
+        "spoken": "AX",
+        "observed_by_model": "AH",
+        "result": "correct",
+        "articulatory_distance": 0.0,
+        "alignment_cost": 0.0,
+    }
+
+
+def test_ordinary_correct_match_does_not_add_model_observation():
+    public = to_public_arpabet({
+        "alignment": [{"expected": "ʌ", "spoken": "ʌ", "result": "correct"}],
+    })
+
+    assert public["alignment"][0] == {
+        "expected": "AH",
+        "spoken": "AH",
+        "result": "correct",
+    }
+
+
 def test_public_arpabet_metrics_are_converted_back_to_internal_ipa():
     assert metrics_to_internal_ipa({"TH1": 0.2, "S": 0.8}) == {
         "θ": 0.2,

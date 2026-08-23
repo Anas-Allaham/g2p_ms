@@ -49,6 +49,7 @@ class G2PRequest(BaseModel):
 class G2PData(BaseModel):
     model_config = ConfigDict(extra="allow")
     text: str
+    original_text: Optional[str] = None
     arpabet: str
     guide: List[Dict[str, Any]]
     g2p_mode: str
@@ -98,6 +99,7 @@ class AnalysisData(BaseModel):
     scorable: bool
     quality_warning: bool
     text: str
+    original_text: Optional[str] = None
     reference_arpabet: str
     predicted_arpabet: str
     scoring_engine: str

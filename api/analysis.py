@@ -454,7 +454,10 @@ def build_analysis_payload(
         "scorable": True,
         "quality_warning": not decision.scorable,
         "persisted": persisted,
-        "text": user_text,
+        # ``reference.text`` is the punctuation-free string that actually fed
+        # G2P/alignment. Keep the submitted text separately for audit/debugging.
+        "text": reference.text,
+        "original_text": user_text,
         "reference_ipa": analysis["reference_ipa"],
         "predicted_ipa": analysis["predicted_ipa"],
         "reference_guide": analysis["reference_guide"],

@@ -5,8 +5,9 @@ and scoring layers. Django and frontend clients use ARPAbet, so the API
 boundary converts through this module.
 
 The service intentionally uses stress-free uppercase ARPAbet because the
-acoustic model does not predict lexical stress.  ``AX`` is used for schwa so
-the model's /ə/ and /ʌ/ classes remain distinct after conversion.
+acoustic model does not predict lexical stress.  ``AX`` remains distinct from
+``AH`` in references and public guides.  The active 39-phone model emits
+``AH`` for both, so scoring handles that checkpoint limitation explicitly.
 """
 
 from __future__ import annotations

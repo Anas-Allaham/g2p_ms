@@ -17,6 +17,10 @@ from src.core.g2p.phoneme_alphabet import (
     ipa_to_arpabet,
     ipa_word_to_arpabet_tokens,
 )
+from src.core.g2p.phoneme_vectors_professional import (
+    acoustic_model_equivalent,
+    canonicalize_phoneme,
+)
 
 
 _SEQUENCE_FORMATS = {
@@ -34,6 +38,7 @@ _SINGLE_PHONEME_KEYS = frozenset({
     "symbol",
     "expected",
     "spoken",
+    "observed_by_model",
 })
 _PHONEME_LIST_KEYS = frozenset({
     "target_phonemes",
@@ -72,9 +77,35 @@ def _convert_confusion_hint(value: str) -> str:
     )
 
 
+def _display_model_equivalent_match(value: Mapping[str, Any]) -> Dict[str, Any]:
+    """Make an accepted collapsed-label match intuitive at the public boundary.
+
+    The internal alignment keeps the checkpoint's real observation for audit
+    and persistence.  Public clients see the accepted reference phone in
+    ``spoken`` and can inspect the unchanged acoustic label separately in
+    ``observed_by_model``.
+    """
+    displayed = dict(value)
+    expected = displayed.get("expected")
+    spoken = displayed.get("spoken")
+    if (
+        displayed.get("result") == "correct"
+        and isinstance(expected, str)
+        and isinstance(spoken, str)
+        and expected not in {"", "-"}
+        and spoken not in {"", "-"}
+        and canonicalize_phoneme(expected) != canonicalize_phoneme(spoken)
+        and acoustic_model_equivalent(expected, spoken)
+    ):
+        displayed["observed_by_model"] = spoken
+        displayed["spoken"] = expected
+    return displayed
+
+
 def to_public_arpabet(value: Any, parent_key: str | None = None) -> Any:
     """Return a recursively converted copy suitable for an API response."""
     if isinstance(value, Mapping):
+        value = _display_model_equivalent_match(value)
         converted: Dict[str, Any] = {}
         for key, child in value.items():
             converted[_RENAMED_KEYS.get(key, key)] = to_public_arpabet(child, key)

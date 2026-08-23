@@ -3,6 +3,7 @@
 from src.core.g2p.phoneme_vectors_professional import (
     DELETION_COST,
     MATCH_COST,
+    acoustic_model_equivalent,
     alignment_substitution_cost,
     articulatory_distance,
     mastery_observation,
@@ -35,6 +36,26 @@ def test_correct_pair_has_zero_distance_and_zero_cost():
     assert label == "correct"
     assert cost == MATCH_COST == 0.0
     assert articulatory_distance("t", "t") == 0.0
+
+
+def test_ax_reference_accepts_ah_from_the_39_phone_acoustic_model():
+    assert acoustic_model_equivalent("ə", "ʌ")
+    assert acoustic_model_equivalent("ʌ", "ə")
+    label, cost = substitution_cost_and_label("ə", "ʌ")
+    assert (label, cost) == ("correct", MATCH_COST)
+
+    rows = align_phonemes(["ə"], ["ʌ"])
+    assert rows == [{
+        "expected": "ə",
+        "spoken": "ʌ",
+        "result": "correct",
+        "articulatory_distance": 0.0,
+        "alignment_cost": 0.0,
+    }]
+    metrics = calculate_metrics(rows)
+    assert metrics["correct"] == 1
+    assert metrics["substitutions"] == 0
+    assert metrics["utterance_score"] == 100.0
 
 
 def test_alignment_cost_is_not_a_distance_for_gaps():

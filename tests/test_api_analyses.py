@@ -33,6 +33,21 @@ def test_stateless_analysis_does_not_persist(client, sample_wav):
     assert _uploads_snapshot() == before
 
 
+def test_analysis_returns_clean_scoring_text_and_preserves_original(client, sample_wav):
+    original = "  school...??  "
+    r = client.post(
+        "/api/v1/pronunciation/analyses",
+        data={"text": original},
+        files={"audio": ("rec.wav", sample_wav, "audio/wav")},
+    )
+
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["text"] == "school"
+    assert data["original_text"] == original.strip()
+    assert data["pronunciation_errors"] == []
+
+
 def test_both_analysis_endpoints_return_letter_ranged_errors(client, sample_wav, monkeypatch):
     from api import acoustic
 

@@ -10,6 +10,7 @@ relies on, so there is exactly one implementation of each:
     * is_vowel() / is_consonant()       - major-class classification
     * alignment_substitution_cost()     - cost used ONLY by DP alignment
     * substitution_cost_and_label()     - (alignment_cost, result_label)
+    * acoustic_model_equivalent()       - contrasts collapsed by the checkpoint
     * classify_substitution()           - result label from ref/hyp/distance
     * mastery_observation()             - soft evidence in [0, 1] for mastery
     * validate_g2p_inventory()          - startup inventory sanity check
@@ -504,6 +505,28 @@ VERY_CLOSE_MAX_DISTANCE = 0.15
 CLOSE_MAX_DISTANCE = 0.35
 MEDIUM_MAX_DISTANCE = 0.65
 
+# The active 39-phone ARPAbet checkpoint has no AX output label: both schwa
+# /ə/ and STRUT /ʌ/ are emitted as AH.  Keep the phonemes distinct everywhere
+# else (reference guides, persistence, API output, and articulatory features),
+# but do not report a pronunciation error the acoustic model cannot observe.
+ACOUSTIC_MODEL_EQUIVALENCE_CLASSES: Tuple[frozenset[str], ...] = (
+    frozenset({"ə", "ʌ"}),
+)
+
+
+def acoustic_model_equivalent(ref_ph: str, hyp_ph: str) -> bool:
+    """Whether the active checkpoint collapses this reference/hypothesis pair.
+
+    This is deliberately narrower than phoneme canonicalization: AX remains AX
+    in the reading guide even though an AH observation can satisfy it.
+    """
+    ref_ph = canonicalize_phoneme(ref_ph)
+    hyp_ph = canonicalize_phoneme(hyp_ph)
+    return ref_ph == hyp_ph or any(
+        ref_ph in equivalence_class and hyp_ph in equivalence_class
+        for equivalence_class in ACOUSTIC_MODEL_EQUIVALENCE_CLASSES
+    )
+
 
 def substitution_cost_and_label(ref_ph: str, hyp_ph: str) -> Tuple[str, float]:
     """Authoritative (result_label, alignment_cost) for one aligned pair.
@@ -514,7 +537,7 @@ def substitution_cost_and_label(ref_ph: str, hyp_ph: str) -> Tuple[str, float]:
     ref_ph = canonicalize_phoneme(ref_ph)
     hyp_ph = canonicalize_phoneme(hyp_ph)
 
-    if ref_ph == hyp_ph:
+    if acoustic_model_equivalent(ref_ph, hyp_ph):
         return "correct", MATCH_COST
 
     if not in_inventory(ref_ph) or not in_inventory(hyp_ph):

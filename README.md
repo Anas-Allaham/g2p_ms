@@ -20,6 +20,11 @@ sequence is stored as compact raw-CTC IPA rather than inventing boundaries.
 Unsupported reference or API tokens fail explicitly, while CTC-only recovery is
 non-fatal and logged.
 
+Reference text is normalized to the English words that actually enter G2P:
+sentence punctuation is removed, whitespace is collapsed, and apostrophes
+inside contractions are retained. Analysis responses expose this clean value as
+`text` and retain the submitted value separately as `original_text`.
+
 IPA→ARPAbet→IPA is intentionally canonicalizing rather than lossless. It may
 normalize vowel length, allophones, and dialect variants to the service's
 American-English-oriented internal inventory.
@@ -278,10 +283,13 @@ options, VAD metadata, JSON-safe scalar conversion, CPU fallback, idempotency,
 original preservation, and lazy model loading.
 
 The current acoustic checkpoint uses the standard stress-free 39-phone ARPAbet
-inventory, where `AH` covers both stressed /ʌ/ and unstressed schwa. The
-reference/API layer retains `AH` versus `AX`, but the acoustic model cannot
-independently observe that contrast. Scores involving this pair should therefore
-be treated as provisional until a stress-aware or explicit-`AX` model is trained.
+inventory, where `AH` covers both /ʌ/ and schwa. The reference/API layer keeps
+`AH` and `AX` distinct so the reading guide remains accurate, while alignment
+accepts an `AH` observation for expected `AX` as a correct, zero-cost match.
+The public alignment displays that accepted match as `spoken: AX` and retains
+the checkpoint's raw label separately as `observed_by_model: AH`.
+The model still cannot independently assess that contrast; doing so requires a
+stress-aware or explicit-`AX` checkpoint.
 
 An optional real-model smoke test uses the bundled WAV fixture; it needs the
 model weight present and only mocks nothing.

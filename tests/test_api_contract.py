@@ -1,10 +1,15 @@
 """FastAPI contract: auth, envelopes, request ids, media types, OpenAPI."""
 
 from conftest import AUTH
+from api.reference_validation import normalize_reference_text
 
 # The client fixture sets a default Authorization header; send an empty one to
 # exercise the unauthenticated path.
 NO_AUTH = {"Authorization": ""}
+
+
+def test_reference_text_normalization_preserves_internal_apostrophes():
+    assert normalize_reference_text("  Don’t... re-enter??  ") == "Don't re enter"
 
 
 def test_health_live_is_public_and_enveloped(client):
@@ -48,6 +53,24 @@ def test_curated_chatgpt_pronunciation_is_returned_as_arpabet(client):
     assert data["arpabet"] == "CH AE T JH IY P IY T IY"
     assert data["reference_g2p_trusted"] is True
     assert data["oov_words"] == []
+
+
+def test_g2p_returns_the_punctuation_free_scoring_text(client):
+    original = "  School... is?? open!  "
+    r = client.post("/api/v1/g2p", json={"text": original})
+
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["text"] == "School is open"
+    assert data["original_text"] == original.strip()
+    assert len(data["arpabet"].split("|")) == 3
+
+
+def test_g2p_rejects_punctuation_only_text(client):
+    r = client.post("/api/v1/g2p", json={"text": "... ?? !!"})
+
+    assert r.status_code == 422
+    assert r.json()["error"]["details"]["field"] == "text"
 
 
 def test_unknown_g2p_word_returns_structured_oov_error(client):
